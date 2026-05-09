@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Packing Performance Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow-x:hidden;width:100%;background:#f0f4f8;font-family:'Poppins',sans-serif;color:#1e293b}
+
+/* ─── Compact Header ─── */
+.header{background:#fff;border-bottom:1px solid #e2e8f0;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-logo{font-size:22px}
+.header-title{font-size:16px;font-weight:800;color:#0f172a;line-height:1}
+.header-sub{font-size:11px;color:#94a3b8;font-weight:400;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.record-pill{display:flex;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:600;color:#1e293b}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#059669;animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(5,150,105,.4)}70%{box-shadow:0 0 0 7px rgba(5,150,105,0)}100%{box-shadow:0 0 0 0 rgba(5,150,105,0)}}
+.refresh-btn{background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;font-family:'Poppins',sans-serif;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:5px}
+.refresh-btn:hover{background:#2563eb;color:#fff}
+.refresh-btn:disabled{opacity:.55;cursor:not-allowed}
+.last-updated{font-size:11px;color:#94a3b8;font-weight:500}
+
+/* ─── Loading State ─── */
+.loading-bar{height:3px;background:linear-gradient(90deg,#2563eb,#0891b2);position:fixed;top:0;left:0;right:0;z-index:200;animation:slide 1.2s ease-in-out infinite;display:none}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}}
+.loading-overlay{position:fixed;inset:0;background:rgba(240,244,248,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:150;gap:14px;display:none}
+.loading-spinner{width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;font-weight:600;color:#64748b}
+
+/* ─── Main Container ─── */
+.main{max-width:1400px;margin:0 auto;padding:14px 16px 40px}
+
+/* ─── Filter bar ─── */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;align-items:flex-end}
+.filter-bar>div{flex:1 1 110px;min-width:90px}
+.filter-bar select{width:100%;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 10px;font-family:'Poppins',sans-serif;font-size:12px;font-weight:500;color:#1e293b;cursor:pointer;transition:border .2s;outline:none}
+.filter-bar select:focus{border-color:#2563eb;background:#fff}
+.filter-bar label{font-size:10px;font-weight:700;color:#94a3b8;margin-bottom:3px;display:block;text-transform:uppercase;letter-spacing:.8px}
+.filter-reset{background:none;border:none;color:#94a3b8;font-size:11px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;padding:7px 4px;white-space:nowrap;transition:color .2s}
+.filter-reset:hover{color:#ef4444}
+
+/* ─── KPI Grid ─── */
+.kpi-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+@media(min-width:700px){.kpi-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}}
+.kpi-card{background:#fff;border-radius:12px;padding:13px 12px;box-shadow:0 1px 3px rgba(0,0,0,.05);border:1px solid #e2e8f0;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s;opacity:0;transform:translateY(16px)}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.08)}
+.kpi-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.kpi-card.blue::before{background:#2563eb}
+.kpi-card.teal::before{background:#0891b2}
+.kpi-card.green::before{background:#059669}
+.kpi-card.amber::before{background:#d97706}
+.kpi-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:8px}
+.kpi-icon.blue{background:#eff6ff}.kpi-icon.teal{background:#ecfeff}.kpi-icon.green{background:#ecfdf5}.kpi-icon.amber{background:#fffbeb}
+.kpi-label{font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+.kpi-value{font-size:clamp(18px,3.5vw,26px);font-weight:800;line-height:1;margin-bottom:3px}
+.kpi-value.blue{color:#2563eb}.kpi-value.teal{color:#0891b2}.kpi-value.green{color:#059669}.kpi-value.amber{color:#d97706}
+.kpi-sub{font-size:10px;color:#94a3b8;font-weight:500}
+
+/* ─── Chart rows ─── */
+.chart-row{display:grid;gap:10px;margin-bottom:10px}
+.row-2{grid-template-columns:minmax(0,1fr)}
+.row-3{grid-template-columns:minmax(0,1fr)}
+@media(min-width:700px){.row-2{grid-template-columns:repeat(2,minmax(0,1fr))}.row-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.chart-card{background:#fff;border-radius:12px;padding:14px 12px;box-shadow:0 1px 3px rgba(0,0,0,.05);border:1px solid #e2e8f0;transition:transform .2s,box-shadow .2s;opacity:0;transform:translateY(16px);min-width:0;overflow:hidden}
+.chart-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px rgba(0,0,0,.07)}
+.chart-card.full{grid-column:1/-1}
+.chart-title{font-size:13px;font-weight:700;color:#0f172a;margin-bottom:2px}
+.chart-sub{font-size:10px;color:#94a3b8;margin-bottom:10px}
+
+/* ─── Insight row ─── */
+.insight-row{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:10px}
+@media(min-width:700px){.insight-row{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.insight-card{background:linear-gradient(135deg,#f8fafc,#eff6ff);border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.05);border:1px solid #e2e8f0;opacity:0;transform:translateY(16px);transition:transform .2s,box-shadow .2s;display:flex;align-items:center;gap:12px}
+.insight-card:hover{transform:translateY(-2px);box-shadow:0 5px 16px rgba(0,0,0,.07)}
+.insight-icon-wrap{width:42px;height:42px;border-radius:10px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.insight-label{font-size:9px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px}
+.insight-val{font-size:clamp(13px,2.5vw,18px);font-weight:800;color:#0f172a;line-height:1.2;margin-bottom:2px}
+.insight-desc{font-size:10px;color:#64748b}
+
+/* ─── Table ─── */
+.table-wrap{overflow-x:auto;border-radius:10px;border:1px solid #e2e8f0}
+table{width:100%;border-collapse:collapse;font-size:11px;min-width:560px}
+thead th{background:#f8fafc;padding:8px 10px;text-align:left;font-weight:700;color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #e2e8f0;white-space:nowrap}
+tbody tr{border-bottom:1px solid #f1f5f9;transition:background .12s}
+tbody tr:hover{background:#f8fafc}
+tbody td{padding:7px 10px;color:#374151;font-weight:500;white-space:nowrap}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600}
+.badge.ladies{background:#fdf2f8;color:#9d174d}
+.badge.mens{background:#eff6ff;color:#1e40af}
+
+/* ─── Error banner ─── */
+.error-banner{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;font-size:12px;color:#dc2626;font-weight:500;margin-bottom:10px;display:none;align-items:center;gap:8px}
+
+/* ─── Anim ─── */
+@keyframes fadeUp{to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<div class="loading-bar" id="loadingBar"></div>
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">Fetching live data…</div>
+</div>
+
+<!-- Sticky Header -->
+<div class="header">
+  <div class="header-left">
+    <span class="header-logo">📦</span>
+    <div>
+      <div class="header-title">Packing Performance Dashboard</div>
+      <div class="header-sub">Real-time · April – May 2026</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="record-pill"><span class="live-dot"></span><span id="recordCount">Loading…</span></div>
+    <span class="last-updated" id="lastUpdated"></span>
+    <button class="refresh-btn" id="refreshBtn" onclick="fetchFromAPI()">⟳ Refresh</button>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="main" id="mainContent">
+
+  <!-- Error banner -->
+  <div class="error-banner" id="errorBanner">⚠️ <span id="errorMsg"></span></div>
+
+  <!-- Filters -->
+  <div class="filter-bar">
+    <div><label>Category</label><select id="fCat" onchange="applyFilters()"><option value="">All Categories</option></select></div>
+    <div><label>Packer</label><select id="fPacker" onchange="applyFilters()"><option value="">All Packers</option></select></div>
+    <div><label>Month</label><select id="fMonth" onchange="applyFilters()"><option value="">All Months</option></select></div>
+    <div><label>Size</label><select id="fSize" onchange="applyFilters()"><option value="">All Sizes</option></select></div>
+    <div style="flex:0 0 auto"><label style="visibility:hidden">.</label><button class="filter-reset" onclick="clearFilters()">✕ Clear</button></div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card blue"><div class="kpi-icon blue">📦</div><div class="kpi-label">Total Pieces</div><div class="kpi-value blue" id="kTotal">—</div><div class="kpi-sub" id="kTotalSub">—</div></div>
+    <div class="kpi-card teal"><div class="kpi-icon teal">🔄</div><div class="kpi-label">Altered Pieces</div><div class="kpi-value teal" id="kAlter">—</div><div class="kpi-sub" id="kAlterSub">—</div></div>
+    <div class="kpi-card green"><div class="kpi-icon green">✅</div><div class="kpi-label">Fresh Pieces</div><div class="kpi-value green" id="kFresh">—</div><div class="kpi-sub" id="kFreshSub">—</div></div>
+    <div class="kpi-card amber"><div class="kpi-icon amber">🔀</div><div class="kpi-label">Mix Pieces</div><div class="kpi-value amber" id="kMix">—</div><div class="kpi-sub" id="kMixSub">—</div></div>
+  </div>
+
+  <!-- Row 1: Trend + Category -->
+  <div class="chart-row row-2">
+    <div class="chart-card">
+      <div class="chart-title">Daily Production Trend</div>
+      <div class="chart-sub">Total pieces packed per day by category</div>
+      <div id="trendChart" style="height:210px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Category Split</div>
+      <div class="chart-sub">Ladies vs Mens by total pieces</div>
+      <div id="catDonut" style="height:210px"></div>
+    </div>
+  </div>
+
+  <!-- Row 2: Packer + Size + Alter Rate -->
+  <div class="chart-row row-3">
+    <div class="chart-card">
+      <div class="chart-title">Packer Performance</div>
+      <div class="chart-sub">Fresh, Alter &amp; Mix per packer</div>
+      <div id="packerBar" style="height:210px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Size Distribution</div>
+      <div class="chart-sub">Top sizes by volume</div>
+      <div id="sizeBar" style="height:210px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Alter Rate by Packer</div>
+      <div class="chart-sub">Altered % of total — lower is better</div>
+      <div id="alterDonut" style="height:210px"></div>
+    </div>
+  </div>
+
+  <!-- Row 3: Scatter + Month + Category Alter -->
+  <div class="chart-row row-3">
+    <div class="chart-card">
+      <div class="chart-title">Fresh vs Alter</div>
+      <div class="chart-sub">Per-entry relationship</div>
+      <div id="scatterChart" style="height:200px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Month Comparison</div>
+      <div class="chart-sub">April vs May totals</div>
+      <div id="monthBar" style="height:200px"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Alter % by Category</div>
+      <div class="chart-sub">Rework rate — Ladies vs Mens</div>
+      <div id="alterCatDonut" style="height:200px"></div>
+    </div>
+  </div>
+
+  <!-- Insights -->
+  <div class="insight-row">
+    <div class="insight-card"><div class="insight-icon-wrap">🏆</div><div><div class="insight-label">Top Packer</div><div class="insight-val" id="iTopPacker">—</div><div class="insight-desc" id="iTopPackerDesc">by total pieces</div></div></div>
+    <div class="insight-card"><div class="insight-icon-wrap">📅</div><div><div class="insight-label">Peak Day</div><div class="insight-val" id="iPeakDay">—</div><div class="insight-desc" id="iPeakDayDesc">highest output</div></div></div>
+    <div class="insight-card"><div class="insight-icon-wrap">🎯</div><div><div class="insight-label">Best Style</div><div class="insight-val" id="iBestStyle">—</div><div class="insight-desc" id="iBestStyleDesc">highest pieces</div></div></div>
+  </div>
+
+  <!-- Table -->
+  <div class="chart-card full" style="opacity:1;transform:none">
+    <div class="chart-title">Full Production Log</div>
+    <div class="chart-sub">All records — scrollable</div>
+    <div class="table-wrap" style="max-height:340px;overflow-y:auto;margin-top:10px">
+      <table>
+        <thead><tr>
+          <th>Date</th><th>Month</th><th>Category</th><th>Packer</th>
+          <th>Style No.</th><th>Lot No.</th><th>Size</th>
+          <th>Fresh</th><th>Alter</th><th>Mix</th><th>Total</th>
+        </tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+const API_URL = 'https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnTrkxl5DzLby0cKrrqUwlLAA1i-Pciw4LGLWvDmCHtIzfZ5WqlEfwvC8QpyQErf7Qx29rWYjhcAbUq7oVEpSqXhcMzhRy3pXVZC2Z3HckX9bb-XrHHT93OO1V1Ewg7Y8Hjj2TEbmP0p5kynuzusgdWo1ezexVAcjRTX1uCeWUa0QKvL984FpgU795Y7XMqwYDwLlWykONcBHThA03MVWXZYiFkm3HswOJ4A72BAClBQmFFbhzt0pCScALfkdjIDgsA0g_zQGN65_nUKJiP_h_WSW1UWjQ&lib=MqtZhu1Q8rOjJDbP0eBW7mCU-P2DTP4Ui';
+
+let allData = [], filteredData = [];
+
+// ─── Date helpers ───
+function isoToIST(isoStr) {
+  // API sends UTC ISO, but data is Indian (IST = UTC+5:30)
+  const d = new Date(isoStr);
+  const ist = new Date(d.getTime() + 330 * 60000);
+  const day = String(ist.getUTCDate()).padStart(2,'0');
+  const mon = String(ist.getUTCMonth()+1).padStart(2,'0');
+  const yr  = ist.getUTCFullYear();
+  return `${day}/${mon}/${yr}`;
+}
+function isoToLabel(isoStr) {
+  const d = new Date(isoStr);
+  const ist = new Date(d.getTime() + 330 * 60000);
+  const day = String(ist.getUTCDate()).padStart(2,'0');
+  const mon = String(ist.getUTCMonth()+1).padStart(2,'0');
+  return `${day}/${mon}`;
+}
+function normaliseDate(d) {
+  if (!d) return '';
+  if (typeof d === 'string' && d.includes('T')) return isoToIST(d);
+  return d; // already DD/MM/YYYY from demo
+}
+function dateLabel(d) {
+  if (!d) return '';
+  const s = normaliseDate(d);
+  return s.slice(0,5); // DD/MM
+}
+function dateSortKey(d) {
+  const s = normaliseDate(d);
+  const [dd,mm,yy] = s.split('/');
+  return new Date(`${yy}-${mm}-${dd}`);
+}
+function n(v){return Number(v)||0;}
+function fmt(v){return Number(v).toLocaleString();}
+
+// ─── API Fetch ───
+async function fetchFromAPI() {
+  setLoading(true);
+  hideError();
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.status !== 'success' || !Array.isArray(json.data)) throw new Error('Unexpected response format');
+    processData(json.data);
+    const now = new Date();
+    document.getElementById('lastUpdated').textContent =
+      `Updated ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+  } catch(err) {
+    showError('Could not fetch live data: ' + err.message + '. Showing fallback data.');
+    processData(FALLBACK);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function setLoading(on) {
+  document.getElementById('loadingBar').style.display = on ? 'block' : 'none';
+  document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none';
+  document.getElementById('refreshBtn').disabled = on;
+}
+function showError(msg) {
+  const b = document.getElementById('errorBanner');
+  document.getElementById('errorMsg').textContent = msg;
+  b.style.display = 'flex';
+}
+function hideError() { document.getElementById('errorBanner').style.display = 'none'; }
+
+// ─── Filters ───
+function processData(data) {
+  allData = data;
+  populateFilters(data);
+  applyFilters();
+}
+
+function populateFilters(data) {
+  const cats    = [...new Set(data.map(d=>d['Category']).filter(Boolean))].sort();
+  const packers = [...new Set(data.map(d=>d['Packer Name']).filter(Boolean))].sort();
+  const months  = [...new Set(data.map(d=>d['Month']).filter(Boolean))].sort();
+  const sizes   = [...new Set(data.map(d=>d['Size']).filter(Boolean))].sort();
+  fill('fCat',cats,'All Categories');
+  fill('fPacker',packers,'All Packers');
+  fill('fMonth',months,'All Months');
+  fill('fSize',sizes,'All Sizes');
+}
+function fill(id,opts,ph) {
+  const s = document.getElementById(id);
+  const cur = s.value;
+  s.innerHTML = `<option value="">${ph}</option>` + opts.map(o=>`<option value="${o}">${o}</option>`).join('');
+  if(opts.includes(cur)) s.value = cur;
+}
+function applyFilters() {
+  const cat    = document.getElementById('fCat').value;
+  const packer = document.getElementById('fPacker').value;
+  const month  = document.getElementById('fMonth').value;
+  const size   = document.getElementById('fSize').value;
+  filteredData = allData.filter(d =>
+    (!cat    || d['Category']===cat) &&
+    (!packer || d['Packer Name']===packer) &&
+    (!month  || d['Month']===month) &&
+    (!size   || d['Size']===size)
+  );
+  renderAll();
+}
+function clearFilters() {
+  ['fCat','fPacker','fMonth','fSize'].forEach(id=>document.getElementById(id).value='');
+  applyFilters();
+}
+
+// ─── Render ───
+function renderAll() {
+  const data = filteredData;
+  document.getElementById('recordCount').textContent = `${data.length} records`;
+
+  const total = data.reduce((s,d)=>s+n(d['Total PCS.']),0);
+  const alter = data.reduce((s,d)=>s+n(d['Alter PCS.']),0);
+  const fresh = data.reduce((s,d)=>s+n(d['Fresh PCS.']),0);
+  const mix   = data.reduce((s,d)=>s+n(d['Mix PCS.']),0);
+
+  document.getElementById('kTotal').textContent = fmt(total);
+  document.getElementById('kTotalSub').textContent = `${data.length} entries`;
+  document.getElementById('kAlter').textContent = fmt(alter);
+  document.getElementById('kAlterSub').textContent = total ? `${((alter/total)*100).toFixed(1)}% of total` : '—';
+  document.getElementById('kFresh').textContent = fmt(fresh);
+  document.getElementById('kFreshSub').textContent = total ? `${((fresh/total)*100).toFixed(1)}% of total` : '—';
+  document.getElementById('kMix').textContent = fmt(mix);
+  document.getElementById('kMixSub').textContent = mix ? `${((mix/total)*100).toFixed(1)}% of total` : 'no mix pieces';
+
+  animateKPIs();
+  renderTrend(data);
+  renderCatDonut(data);
+  renderPackerBar(data);
+  renderSizeBar(data);
+  renderAlterDonut(data);
+  renderScatter(data);
+  renderMonthBar(data);
+  renderAlterCatDonut(data);
+  renderInsights(data);
+  renderTable(data);
+  animateCards();
+}
+
+function animateKPIs() {
+  document.querySelectorAll('.kpi-card').forEach((c,i)=>{
+    c.style.animation='none'; c.offsetHeight;
+    c.style.animation=`fadeUp .45s ease ${i*0.07}s forwards`;
+  });
+}
+function animateCards() {
+  document.querySelectorAll('.chart-card,.insight-card').forEach((c,i)=>{
+    c.style.animation='none'; c.offsetHeight;
+    c.style.animation=`fadeUp .5s ease ${i*0.05}s forwards`;
+  });
+}
+
+// ─── Plotly base config ───
+const PLY = {
+  paper_bgcolor:'rgba(0,0,0,0)',
+  plot_bgcolor:'rgba(0,0,0,0)',
+  font:{family:'Poppins',size:10,color:'#64748b'},
+  margin:{t:6,r:8,b:36,l:44},
+  xaxis:{gridcolor:'#e2e8f0',zeroline:false,tickfont:{size:9}},
+  yaxis:{gridcolor:'#e2e8f0',zeroline:false,tickfont:{size:9}},
+  showlegend:true,
+  legend:{orientation:'h',y:-0.32,x:0.5,xanchor:'center',font:{size:9}}
+};
+const CFG = {displayModeBar:false,responsive:true};
+
+function renderTrend(data) {
+  const byDate = {};
+  data.forEach(d => {
+    const k = normaliseDate(d['Date']); const cat = d['Category'];
+    if(!byDate[k]) byDate[k]={Ladies:0,Mens:0};
+    byDate[k][cat] = (byDate[k][cat]||0) + n(d['Total PCS.']);
+  });
+  const dates = Object.keys(byDate).sort((a,b)=>dateSortKey(a)-dateSortKey(b));
+  const labels = dates.map(d=>d.slice(0,5));
+  Plotly.newPlot('trendChart',[
+    {x:labels,y:dates.map(d=>byDate[d].Ladies||0),name:'Ladies',type:'scatter',mode:'lines+markers',
+      line:{color:'#e11d48',width:2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(225,29,72,0.07)',marker:{size:4,color:'#e11d48'}},
+    {x:labels,y:dates.map(d=>byDate[d].Mens||0),name:'Mens',type:'scatter',mode:'lines+markers',
+      line:{color:'#2563eb',width:2,shape:'spline'},fill:'tozeroy',fillcolor:'rgba(37,99,235,0.07)',marker:{size:4,color:'#2563eb'}}
+  ],{...PLY,margin:{t:6,r:8,b:48,l:44}},CFG);
+}
+
+function renderCatDonut(data) {
+  const cats = {};
+  data.forEach(d=>{const c=d['Category'];if(c)cats[c]=(cats[c]||0)+n(d['Total PCS.']);});
+  Plotly.newPlot('catDonut',[{
+    labels:Object.keys(cats),values:Object.values(cats),type:'pie',hole:0.55,
+    marker:{colors:['#e11d48','#2563eb']},
+    textinfo:'label+percent',textfont:{size:10,family:'Poppins'},
+    hovertemplate:'%{label}: %{value:,.0f} pcs<extra></extra>'
+  }],{...PLY,showlegend:false,margin:{t:10,r:10,b:10,l:10}},CFG);
+}
+
+function renderPackerBar(data) {
+  const packers = [...new Set(data.map(d=>d['Packer Name']).filter(Boolean))];
+  const fresh = packers.map(p=>data.filter(d=>d['Packer Name']===p).reduce((s,d)=>s+n(d['Fresh PCS.']),0));
+  const alter = packers.map(p=>data.filter(d=>d['Packer Name']===p).reduce((s,d)=>s+n(d['Alter PCS.']),0));
+  const mix   = packers.map(p=>data.filter(d=>d['Packer Name']===p).reduce((s,d)=>s+n(d['Mix PCS.']),0));
+  Plotly.newPlot('packerBar',[
+    {x:packers,y:fresh,name:'Fresh',type:'bar',marker:{color:'#059669'},hovertemplate:'%{x}<br>Fresh: %{y:,.0f}<extra></extra>'},
+    {x:packers,y:alter,name:'Alter',type:'bar',marker:{color:'#d97706'},hovertemplate:'%{x}<br>Alter: %{y:,.0f}<extra></extra>'},
+    {x:packers,y:mix,name:'Mix',type:'bar',marker:{color:'#7c3aed'},hovertemplate:'%{x}<br>Mix: %{y:,.0f}<extra></extra>'}
+  ],{...PLY,barmode:'group',xaxis:{...PLY.xaxis,gridcolor:'transparent'},
+    yaxis:{...PLY.yaxis,range:[0,Math.max(...fresh,...alter,...mix)*1.22]},
+    margin:{t:6,r:8,b:48,l:44}},CFG);
+}
+
+function renderSizeBar(data) {
+  const sizes = {};
+  data.forEach(d=>{const s=d['Size'];if(s)sizes[s]=(sizes[s]||0)+n(d['Total PCS.']);});
+  const sorted = Object.entries(sizes).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  Plotly.newPlot('sizeBar',[{
+    x:sorted.map(s=>s[0]),y:sorted.map(s=>s[1]),type:'bar',
+    marker:{color:'#0891b2'},
+    hovertemplate:'%{x}: %{y:,.0f} pcs<extra></extra>'
+  }],{...PLY,showlegend:false,
+    xaxis:{...PLY.xaxis,gridcolor:'transparent',tickangle:-30},
+    yaxis:{...PLY.yaxis,range:[0,Math.max(...sorted.map(s=>s[1]))*1.18]},
+    margin:{t:6,r:8,b:52,l:44}},CFG);
+}
+
+function renderAlterDonut(data) {
+  const packers = [...new Set(data.map(d=>d['Packer Name']).filter(Boolean))];
+  const rates = packers.map(p=>{
+    const rows=data.filter(d=>d['Packer Name']===p);
+    const tot=rows.reduce((s,d)=>s+n(d['Total PCS.']),0);
+    const alt=rows.reduce((s,d)=>s+n(d['Alter PCS.']),0);
+    return tot?parseFloat(((alt/tot)*100).toFixed(1)):0;
+  });
+  Plotly.newPlot('alterDonut',[{
+    labels:packers,values:rates,type:'pie',hole:0.52,
+    marker:{colors:['#2563eb','#e11d48','#059669','#d97706']},
+    textinfo:'label+percent',textfont:{size:9,family:'Poppins'},
+    hovertemplate:'%{label}: %{value}% alter rate<extra></extra>',
+    insidetextorientation:'radial'
+  }],{...PLY,showlegend:false,margin:{t:14,r:14,b:14,l:14},
+    title:{text:'Alter %',font:{size:10,color:'#94a3b8'},y:0.5,x:0.5,xanchor:'center',yanchor:'middle'}},CFG);
+}
+
+function renderScatter(data) {
+  const colors = data.map(d=>d['Category']==='Ladies'?'#e11d48':'#2563eb');
+  Plotly.newPlot('scatterChart',[{
+    x:data.map(d=>n(d['Fresh PCS.'])),
+    y:data.map(d=>n(d['Alter PCS.'])),
+    mode:'markers',type:'scatter',
+    marker:{color:colors,size:5,opacity:0.6},
+    text:data.map(d=>`${d['Category']} | Style ${d['Style No.']}`),
+    hovertemplate:'Fresh: %{x}<br>Alter: %{y}<br>%{text}<extra></extra>'
+  }],{...PLY,showlegend:false,margin:{t:6,r:8,b:38,l:44},
+    xaxis:{...PLY.xaxis,title:{text:'Fresh PCS',font:{size:9}}},
+    yaxis:{...PLY.yaxis,title:{text:'Alter PCS',font:{size:9}}}},CFG);
+}
+
+function renderMonthBar(data) {
+  const months = {};
+  data.forEach(d=>{const m=d['Month'];if(m)months[m]=(months[m]||0)+n(d['Total PCS.']);});
+  const cols=['#2563eb','#0891b2','#059669','#d97706'];
+  Plotly.newPlot('monthBar',[{
+    x:Object.keys(months),y:Object.values(months),type:'bar',
+    text:Object.values(months).map(v=>fmt(v)),textposition:'outside',textfont:{size:9,color:'#2563eb'},
+    marker:{color:Object.keys(months).map((_,i)=>cols[i%cols.length])},
+    hovertemplate:'%{x}: %{y:,.0f} pcs<extra></extra>'
+  }],{...PLY,showlegend:false,
+    margin:{t:20,r:8,b:36,l:44},
+    yaxis:{...PLY.yaxis,range:[0,Math.max(...Object.values(months))*1.22]},
+    xaxis:{...PLY.xaxis,gridcolor:'transparent'}},CFG);
+}
+
+function renderAlterCatDonut(data) {
+  const cats = [...new Set(data.map(d=>d['Category']).filter(Boolean))];
+  const rates = cats.map(c=>{
+    const rows=data.filter(d=>d['Category']===c);
+    const tot=rows.reduce((s,d)=>s+n(d['Total PCS.']),0);
+    const alt=rows.reduce((s,d)=>s+n(d['Alter PCS.']),0);
+    return tot?parseFloat(((alt/tot)*100).toFixed(1)):0;
+  });
+  Plotly.newPlot('alterCatDonut',[{
+    labels:cats,values:rates,type:'pie',hole:0.52,
+    marker:{colors:['#e11d48','#2563eb']},
+    textinfo:'label+percent',textfont:{size:9,family:'Poppins'},
+    hovertemplate:'%{label}: %{value}% alter rate<extra></extra>',
+    insidetextorientation:'radial'
+  }],{...PLY,showlegend:false,margin:{t:14,r:14,b:14,l:14}},CFG);
+}
+
+function renderInsights(data) {
+  const pm={};data.forEach(d=>{const p=d['Packer Name'];if(p)pm[p]=(pm[p]||0)+n(d['Total PCS.']);});
+  const top=Object.entries(pm).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('iTopPacker').textContent=top?top[0]:'—';
+  document.getElementById('iTopPackerDesc').textContent=top?`${fmt(top[1])} total pieces`:'';
+
+  const dm={};data.forEach(d=>{const k=normaliseDate(d['Date']);if(k)dm[k]=(dm[k]||0)+n(d['Total PCS.']);});
+  const peak=Object.entries(dm).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('iPeakDay').textContent=peak?peak[0].slice(0,5):'—';
+  document.getElementById('iPeakDayDesc').textContent=peak?`${fmt(peak[1])} pieces`:'';
+
+  const sm={};data.forEach(d=>{const s='Style '+d['Style No.'];sm[s]=(sm[s]||0)+n(d['Total PCS.']);});
+  const best=Object.entries(sm).sort((a,b)=>b[1]-a[1])[0];
+  document.getElementById('iBestStyle').textContent=best?best[0]:'—';
+  document.getElementById('iBestStyleDesc').textContent=best?`${fmt(best[1])} pieces`:'';
+}
+
+function renderTable(data) {
+  document.getElementById('tableBody').innerHTML = data.slice(0,300).map(d=>`
+    <tr>
+      <td>${normaliseDate(d['Date']).slice(0,8)||'—'}</td>
+      <td>${d['Month']||'—'}</td>
+      <td><span class="badge ${(d['Category']||'').toLowerCase()}">${d['Category']||'—'}</span></td>
+      <td>${d['Packer Name']||'—'}</td>
+      <td>${d['Style No.']||'—'}</td>
+      <td>${d['Lot No.']||'—'}</td>
+      <td>${d['Size']||'—'}</td>
+      <td style="color:#059669;font-weight:600">${fmt(n(d['Fresh PCS.']))}</td>
+      <td style="color:#d97706;font-weight:600">${fmt(n(d['Alter PCS.']))}</td>
+      <td style="color:#7c3aed;font-weight:600">${fmt(n(d['Mix PCS.']))}</td>
+      <td style="font-weight:700;color:#0f172a">${fmt(n(d['Total PCS.']))}</td>
+    </tr>`).join('');
+}
+
+// ─── Fallback demo data ───
+const FALLBACK=[{"Month":"April","Date":"2026-03-31T18:30:00.000Z","Alter PCS.":"","Fresh PCS.":427,"Mix PCS.":"","Size":"28X32","Style No.":1841,"Lot No.":359,"Packer Name":"Sabeel","Total PCS.":427,"Category":"Ladies"},{"Month":"April","Date":"2026-03-31T18:30:00.000Z","Alter PCS.":2,"Fresh PCS.":423,"Mix PCS.":"","Size":"32X40","Style No.":1841,"Lot No.":359,"Packer Name":"Sabeel","Total PCS.":425,"Category":"Ladies"},{"Month":"April","Date":"2026-04-01T18:30:00.000Z","Alter PCS.":"","Fresh PCS.":125,"Mix PCS.":"","Size":"36X40","Style No.":16160,"Lot No.":1360,"Packer Name":"Sabeel","Total PCS.":125,"Category":"Mens"},{"Month":"April","Date":"2026-04-03T18:30:00.000Z","Alter PCS.":4,"Fresh PCS.":786,"Mix PCS.":"","Size":"26X30","Style No.":1847,"Lot No.":361,"Packer Name":"Shish Pal","Total PCS.":790,"Category":"Ladies"},{"Month":"April","Date":"2026-04-08T18:30:00.000Z","Alter PCS.":"","Fresh PCS.":514,"Mix PCS.":"","Size":"26X30","Style No.":1834,"Lot No.":332,"Packer Name":"Shish Pal","Total PCS.":514,"Category":"Ladies"},{"Month":"April","Date":"2026-04-08T18:30:00.000Z","Alter PCS.":15,"Fresh PCS.":502,"Mix PCS.":"","Size":"26X30","Style No.":1844,"Lot No.":332,"Packer Name":"Shish Pal","Total PCS.":517,"Category":"Ladies"},{"Month":"April","Date":"2026-04-09T18:30:00.000Z","Alter PCS.":16,"Fresh PCS.":574,"Mix PCS.":"","Size":"32X40","Style No.":3250,"Lot No.":364,"Packer Name":"Sabeel","Total PCS.":590,"Category":"Ladies"},{"Month":"April","Date":"2026-04-14T18:30:00.000Z","Alter PCS.":1,"Fresh PCS.":484,"Mix PCS.":"","Size":"28X32","Style No.":3251,"Lot No.":362,"Packer Name":"Sabeel","Total PCS.":485,"Category":"Ladies"},{"Month":"April","Date":"2026-04-14T18:30:00.000Z","Alter PCS.":2,"Fresh PCS.":555,"Mix PCS.":"","Size":"32X40","Style No.":3151,"Lot No.":292,"Packer Name":"Shish Pal","Total PCS.":557,"Category":"Ladies"},{"Month":"April","Date":"2026-04-20T18:30:00.000Z","Alter PCS.":10,"Fresh PCS.":507,"Mix PCS.":4,"Size":"28X32","Style No.":3152,"Lot No.":310,"Packer Name":"Sabeel","Total PCS.":521,"Category":"Ladies"},{"Month":"April","Date":"2026-04-28T18:30:00.000Z","Alter PCS.":11,"Fresh PCS.":439,"Mix PCS.":"","Size":"26X30","Style No.":1847,"Lot No.":357,"Packer Name":"Sabeel","Total PCS.":450,"Category":"Ladies"},{"Month":"April","Date":"2026-04-29T18:30:00.000Z","Alter PCS.":5,"Fresh PCS.":451,"Mix PCS.":"","Size":"28X34","Style No.":4001,"Lot No.":346,"Packer Name":"Shish Pal","Total PCS.":456,"Category":"Ladies"},{"Month":"May","Date":"2026-04-30T18:30:00.000Z","Alter PCS.":9,"Fresh PCS.":461,"Mix PCS.":"","Size":"32X40","Style No.":3151,"Lot No.":309,"Packer Name":"Sabeel","Total PCS.":470,"Category":"Ladies"},{"Month":"May","Date":"2026-05-01T18:30:00.000Z","Alter PCS.":7,"Fresh PCS.":314,"Mix PCS.":"","Size":"32X40","Style No.":955,"Lot No.":"Nasir","Packer Name":"Sabeel","Total PCS.":321,"Category":"Ladies"},{"Month":"May","Date":"2026-05-01T18:30:00.000Z","Alter PCS.":9,"Fresh PCS.":279,"Mix PCS.":"","Size":"32X40","Style No.":952,"Lot No.":"Nasir","Packer Name":"Shish Pal","Total PCS.":288,"Category":"Ladies"},{"Month":"May","Date":"2026-05-05T18:30:00.000Z","Alter PCS.":1,"Fresh PCS.":457,"Mix PCS.":"","Size":"28X32","Style No.":3151,"Lot No.":312,"Packer Name":"Sabeel","Total PCS.":458,"Category":"Ladies"}];
+
+// ─── Init ───
+window.addEventListener('load', fetchFromAPI);
+</script>
+</body>
+</html>
