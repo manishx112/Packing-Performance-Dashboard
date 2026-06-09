@@ -607,6 +607,317 @@
                 transform: translateY(0)
             }
         }
+        /* ─── Table toolbar + sorting + export ─── */
+        .table-head-row {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap
+        }
+
+        .table-tools {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap
+        }
+
+        .table-search {
+            min-width: 240px;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 13px;
+            color: #1e293b;
+            outline: none;
+            transition: border-color .15s, box-shadow .15s
+        }
+
+        .table-search:focus {
+            border-color: #0ea5e9;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, .15)
+        }
+
+        .exp-btn {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fff;
+            color: #0f172a;
+            font-family: 'Poppins', sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .15s;
+            white-space: nowrap
+        }
+
+        .exp-btn:hover {
+            background: #0ea5e9;
+            color: #fff;
+            border-color: #0ea5e9;
+            transform: translateY(-1px)
+        }
+
+        #dataTable th {
+            cursor: pointer;
+            user-select: none;
+            position: sticky;
+            top: 0;
+            white-space: nowrap
+        }
+
+        #dataTable th.num {
+            text-align: right
+        }
+
+        #dataTable th:hover {
+            color: #0ea5e9
+        }
+
+        #dataTable th .arrow {
+            opacity: .35;
+            font-size: 10px;
+            margin-left: 3px
+        }
+
+        #dataTable th.sorted .arrow {
+            opacity: 1;
+            color: #0ea5e9
+        }
+
+        #dataTable td.num {
+            text-align: right
+        }
+
+        #dataTable tfoot td {
+            position: sticky;
+            bottom: 0;
+            background: #f1f5f9;
+            font-weight: 700;
+            color: #0f172a;
+            border-top: 2px solid #cbd5e1
+        }
+
+        .table-footer {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 6px
+        }
+
+        mark {
+            background: #fde68a;
+            color: inherit;
+            padding: 0 1px;
+            border-radius: 2px
+        }
+
+        @media print {
+
+            .header,
+            .filter-bar,
+            .table-tools,
+            .refresh-btn,
+            #loadingBar,
+            #loadingOverlay,
+            .chart-row {
+                display: none !important
+            }
+
+            .table-wrap {
+                max-height: none !important;
+                overflow: visible !important
+            }
+
+            body {
+                background: #fff
+            }
+        }
+        /* ─── Forecast section ─── */
+        .forecast-kpis {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 12px
+        }
+
+        @media (max-width:900px) {
+            .forecast-kpis {
+                grid-template-columns: repeat(2, 1fr)
+            }
+        }
+
+        .fc-card {
+            background: linear-gradient(135deg, #f8fafc, #eef2f7);
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 12px 14px
+        }
+
+        .fc-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: .03em
+        }
+
+        .fc-val {
+            font-size: 20px;
+            font-weight: 800;
+            color: #0f172a;
+            margin: 3px 0;
+            line-height: 1.1
+        }
+
+        .fc-desc {
+            font-size: 11px;
+            color: #94a3b8
+        }
+
+        .fc-up {
+            color: #059669
+        }
+
+        .fc-down {
+            color: #e11d48
+        }
+
+        .forecast-note {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #64748b;
+            line-height: 1.5
+        }
+        /* ═══ Mobile responsiveness ═══ */
+        @media (max-width: 640px) {
+            .main {
+                padding: 10px 10px 32px
+            }
+
+            .header {
+                padding: 10px 12px;
+                gap: 8px
+            }
+
+            .header-title {
+                font-size: 14px
+            }
+
+            .header-sub {
+                font-size: 10px
+            }
+
+            .refresh-btn {
+                padding: 6px 10px;
+                font-size: 12px
+            }
+
+            /* Filter bar: 2-up grid, comfortable tap targets */
+            .filter-bar {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                padding: 12px
+            }
+
+            .filter-bar>div {
+                min-width: 0
+            }
+
+            .filter-bar select,
+            .filter-bar input[type="text"] {
+                padding: 9px 10px;
+                font-size: 14px
+            }
+
+            /* keep iOS from zooming on focus (needs >=16px) */
+            .filter-bar select,
+            .filter-bar input[type="text"],
+            .table-search {
+                font-size: 16px
+            }
+
+            .filter-reset {
+                width: 100%;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 9px
+            }
+
+            /* KPI + chart titles a touch smaller */
+            .kpi-val {
+                font-size: 22px
+            }
+
+            .chart-card {
+                padding: 12px
+            }
+
+            .chart-title {
+                font-size: 13px
+            }
+
+            .chart-sub {
+                font-size: 10px
+            }
+
+            /* Table toolbar stacks; search full width; buttons wrap evenly */
+            .table-head-row {
+                align-items: stretch
+            }
+
+            .table-tools {
+                width: 100%
+            }
+
+            .table-search {
+                flex: 1 1 100%;
+                min-width: 0;
+                padding: 10px 12px
+            }
+
+            .exp-btn {
+                flex: 1 1 0;
+                text-align: center;
+                padding: 10px 8px
+            }
+
+            /* Forecast KPIs single column-friendly */
+            .forecast-kpis {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px
+            }
+
+            .fc-val {
+                font-size: 18px
+            }
+
+            table {
+                font-size: 12px
+            }
+
+            #dataTable th,
+            #dataTable td {
+                padding: 7px 8px
+            }
+        }
+
+        @media (max-width: 380px) {
+            .forecast-kpis {
+                grid-template-columns: 1fr
+            }
+
+            .header-sub {
+                display: none
+            }
+        }
     </style>
 </head>
 
@@ -630,7 +941,8 @@
         <div class="header-right">
             <div class="record-pill"><span class="live-dot"></span><span id="recordCount">Loading…</span></div>
             <span class="last-updated" id="lastUpdated"></span>
-            <button class="refresh-btn" id="refreshBtn" onclick="fetchFromAPI()">⟳ Refresh</button>
+            <span id="liveBadge" style="display:none;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid currentColor;border-radius:10px"></span>
+            <button class="refresh-btn" id="refreshBtn" onclick="fetchFromAPI(true)">⟳ Refresh</button>
         </div>
     </div>
 
@@ -773,30 +1085,80 @@
             </div>
         </div>
 
+        <!-- ─── Predictive Analysis ─── -->
+        <div class="chart-card full" style="opacity:1;transform:none;margin-top:4px">
+            <div class="chart-title">📈 Predictive Analysis &amp; Forecast</div>
+            <div class="chart-sub" id="forecastSub">Monthly totals by year (Jan→Dec) + forward projection — filters apply</div>
+
+            <div class="forecast-kpis" id="forecastKpis">
+                <div class="fc-card">
+                    <div class="fc-label">Daily Avg (recent)</div>
+                    <div class="fc-val" id="fcDailyAvg">—</div>
+                    <div class="fc-desc" id="fcDailyAvgDesc">last 14 active days</div>
+                </div>
+                <div class="fc-card">
+                    <div class="fc-label">Trend</div>
+                    <div class="fc-val" id="fcTrend">—</div>
+                    <div class="fc-desc" id="fcTrendDesc">pcs/day direction</div>
+                </div>
+                <div class="fc-card">
+                    <div class="fc-label">Next 7 Days</div>
+                    <div class="fc-val" id="fcNext7">—</div>
+                    <div class="fc-desc">projected pieces</div>
+                </div>
+                <div class="fc-card">
+                    <div class="fc-label">Next 30 Days</div>
+                    <div class="fc-val" id="fcNext30">—</div>
+                    <div class="fc-desc">projected pieces</div>
+                </div>
+                <div class="fc-card">
+                    <div class="fc-label">Forecast Confidence</div>
+                    <div class="fc-val" id="fcConf">—</div>
+                    <div class="fc-desc" id="fcConfDesc">model fit (R²)</div>
+                </div>
+            </div>
+
+            <div id="forecastChart" style="height:280px;margin-top:10px"></div>
+            <div class="forecast-note" id="forecastNote"></div>
+        </div>
+
         <!-- Table -->
         <div class="chart-card full" style="opacity:1;transform:none">
-            <div class="chart-title">Full Production Log</div>
-            <div class="chart-sub">All records — scrollable</div>
-            <div class="table-wrap" style="max-height:340px;overflow-y:auto;margin-top:10px">
-                <table>
+            <div class="table-head-row">
+                <div>
+                    <div class="chart-title">Full Production Log</div>
+                    <div class="chart-sub" id="tableSub">All records — click any column header to sort</div>
+                </div>
+                <div class="table-tools">
+                    <input type="text" id="tableSearch" class="table-search"
+                        placeholder="🔍 Search anything — packer, style, lot, size…" oninput="debouncedTableSearch()" />
+                    <button class="exp-btn" onclick="exportCSV()">⬇ CSV</button>
+                    <button class="exp-btn" onclick="exportJSON()">⬇ JSON</button>
+                    <button class="exp-btn" onclick="printReport()">🖨 Print</button>
+                </div>
+            </div>
+            <div class="table-wrap" style="max-height:460px;overflow-y:auto;margin-top:12px">
+                <table id="dataTable">
                     <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Month</th>
-                            <th>Category</th>
-                            <th>Packer</th>
-                            <th>Style No.</th>
-                            <th>Lot No.</th>
-                            <th>Size</th>
-                            <th>Fresh</th>
-                            <th>Alter</th>
-                            <th>Mix</th>
-                            <th>Total</th>
+                        <tr id="tableHeadRow">
+                            <th data-key="Date">Date</th>
+                            <th data-key="Month">Month</th>
+                            <th data-key="Category">Category</th>
+                            <th data-key="Packer Name">Packer</th>
+                            <th data-key="Style No.">Style No.</th>
+                            <th data-key="Lot No.">Lot No.</th>
+                            <th data-key="Size">Size</th>
+                            <th data-key="Fresh PCS." class="num">Fresh</th>
+                            <th data-key="Alter PCS." class="num">Alter</th>
+                            <th data-key="Mix PCS." class="num">Mix</th>
+                            <th data-key="Total PCS." class="num">Total</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody"></tbody>
+                    <tfoot id="tableFoot"></tfoot>
                 </table>
             </div>
+            <div class="table-footer" id="tableFooterNote"></div>
         </div>
 
     </div><!-- /main -->
@@ -861,25 +1223,90 @@
         function n(v) { return Number(v) || 0; }
         function fmt(v) { return Number(v).toLocaleString(); }
 
-        // ─── API Fetch ───
-        async function fetchFromAPI() {
-            setLoading(true);
-            hideError();
+        // ─── API Fetch (cache-first + parallel live) ───
+        const CACHE_KEY = 'packing_dash_cache_v1';
+
+        function readCache() {
             try {
-                const res = await fetch(API_URL);
+                const raw = localStorage.getItem(CACHE_KEY);
+                if (!raw) return null;
+                const obj = JSON.parse(raw);
+                if (obj && Array.isArray(obj.data) && obj.data.length) return obj;
+            } catch (e) { }
+            return null;
+        }
+        function writeCache(data) {
+            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch (e) { }
+        }
+        function setUpdatedLabel(prefix, ts) {
+            const d = ts ? new Date(ts) : new Date();
+            const p = x => x.toString().padStart(2, '0');
+            document.getElementById('lastUpdated').textContent = `${prefix} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        }
+        // signature to detect whether live data actually differs from what's shown
+        function dataSig(arr) {
+            let t = 0; for (const d of arr) t += n(d['Total PCS.']);
+            return arr.length + ':' + t;
+        }
+
+        // Main entry: paint cached data instantly, fetch live in parallel, swap when ready.
+        async function fetchFromAPI(manual) {
+            hideError();
+            const cache = readCache();
+            const haveData = allData && allData.length;
+
+            // 1) Instant paint from cache (only on first load, before any data is shown)
+            if (cache && !haveData) {
+                processData(cache.data, { silent: true });
+                setUpdatedLabel('Cached', cache.ts);
+                showLiveBadge('syncing'); // subtle "updating…" hint, no blocking overlay
+            } else {
+                // No cache yet, or a manual refresh — show the normal loader
+                setLoading(true);
+            }
+
+            // 2) Fetch live in the background (parallel to the cached render)
+            try {
+                const res = await fetch(API_URL, { cache: 'no-store' });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const json = await res.json();
                 if (json.status !== 'success' || !Array.isArray(json.data)) throw new Error('Unexpected response format');
-                processData(json.data);
-                const now = new Date();
-                document.getElementById('lastUpdated').textContent =
-                    `Updated ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+                const fresh = json.data;
+                const changed = !haveData || !cache || dataSig(fresh) !== dataSig(allData);
+
+                if (changed) {
+                    processData(fresh);           // reflect live data in charts + table
+                } else {
+                    showLiveBadge('uptodate');    // cache already matched live — no flicker
+                }
+                writeCache(fresh);
+                setUpdatedLabel('Updated');
             } catch (err) {
-                showError('Could not fetch live data: ' + err.message + '. Showing fallback data.');
-                processData(FALLBACK);
+                if (allData && allData.length) {
+                    // We already have cached data on screen — keep it, just flag the sync failure
+                    showLiveBadge('offline');
+                    showError('Live sync failed (' + err.message + '). Showing last cached data.');
+                } else {
+                    showError('Could not fetch live data: ' + err.message + '. Showing fallback data.');
+                    processData(FALLBACK);
+                }
             } finally {
                 setLoading(false);
             }
+        }
+
+        function showLiveBadge(state) {
+            const el = document.getElementById('liveBadge');
+            if (!el) return;
+            const map = {
+                syncing: { t: '⟳ Syncing live…', c: '#0ea5e9' },
+                uptodate: { t: '✓ Up to date', c: '#059669' },
+                offline: { t: '⚠ Offline (cached)', c: '#d97706' }
+            };
+            const m = map[state]; if (!m) return;
+            el.textContent = m.t; el.style.color = m.c; el.style.display = 'inline-block';
+            if (state === 'uptodate') setTimeout(() => { el.style.display = 'none'; }, 2500);
         }
 
         function setLoading(on) {
@@ -895,10 +1322,22 @@
         function hideError() { document.getElementById('errorBanner').style.display = 'none'; }
 
         // ─── Filters ───
-        function processData(data) {
+        function processData(data, opts) {
+            opts = opts || {};
             allData = data;
+            buildSearchIndex(data);
             populateFilters(data);
+            if (opts.silent) document.getElementById('loadingOverlay').style.display = 'none';
             applyFilters();
+        }
+
+        // Pre-built lowercase search blob per row → fast global search, no per-keystroke rebuild
+        const SEARCH_FIELDS = ['Month', 'Category', 'Packer Name', 'Style No.', 'Lot No.', 'Size', 'Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
+        function buildSearchIndex(data) {
+            for (const d of data) {
+                d.__s = (normaliseDate(d['Date']) + ' ' +
+                    SEARCH_FIELDS.map(f => d[f] ?? '').join(' ')).toLowerCase();
+            }
         }
 
         function populateFilters(data) {
@@ -990,6 +1429,7 @@
             renderMonthBar(data);
             renderAlterCatDonut(data);
             renderInsights(data);
+            renderForecast(data);
             renderTable(data);
             animateCards();
         }
@@ -1042,6 +1482,156 @@
                     line: { color: '#2563eb', width: 2, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(37,99,235,0.07)', marker: { size: 4, color: '#2563eb' }
                 }
             ], { ...PLY, margin: { t: 6, r: 8, b: 48, l: 44 } }, CFG);
+        }
+
+        // ─── Predictive Analysis ───
+        // Linear regression (least squares) on a daily time series.
+        function linReg(xs, ys) {
+            const n = xs.length;
+            if (n < 2) return null;
+            let sx = 0, sy = 0, sxy = 0, sxx = 0;
+            for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxy += xs[i] * ys[i]; sxx += xs[i] * xs[i]; }
+            const denom = (n * sxx - sx * sx);
+            if (denom === 0) return null;
+            const slope = (n * sxy - sx * sy) / denom;
+            const intercept = (sy - slope * sx) / n;
+            // R² + residual std-dev for the confidence band
+            const meanY = sy / n;
+            let ssTot = 0, ssRes = 0;
+            for (let i = 0; i < n; i++) {
+                const pred = slope * xs[i] + intercept;
+                ssTot += (ys[i] - meanY) ** 2;
+                ssRes += (ys[i] - pred) ** 2;
+            }
+            const r2 = ssTot ? 1 - ssRes / ssTot : 0;
+            const stdErr = Math.sqrt(ssRes / Math.max(1, n - 2));
+            return { slope, intercept, r2, stdErr };
+        }
+
+        function renderForecast(data) {
+            // Aggregate total pieces per calendar day
+            const byDay = {};
+            for (const d of data) {
+                const k = normaliseDate(d['Date']);
+                if (!k) continue;
+                byDay[k] = (byDay[k] || 0) + n(d['Total PCS.']);
+            }
+            const days = Object.keys(byDay).sort((a, b) => dateSortKey(a) - dateSortKey(b));
+
+            const elNote = document.getElementById('forecastNote');
+            if (days.length < 4) {
+                ['fcDailyAvg', 'fcTrend', 'fcNext7', 'fcNext30', 'fcConf'].forEach(id => document.getElementById(id).textContent = '—');
+                Plotly.purge('forecastChart');
+                elNote.textContent = 'Not enough history in the current filter to forecast (need at least 4 active days). Try widening the filters.';
+                return;
+            }
+
+            // x = day index from the first active day; y = pieces that day
+            const t0 = dateSortKey(days[0]).getTime();
+            const DAY = 86400000;
+            const xs = days.map(d => Math.round((dateSortKey(d).getTime() - t0) / DAY));
+            const ys = days.map(d => byDay[d]);
+            const fit = linReg(xs, ys);
+
+            const lastX = xs[xs.length - 1];
+            const HORIZON = 30;
+            const futureX = [], futureLabels = [], futureY = [], bandHi = [], bandLo = [];
+            const lastDate = dateSortKey(days[days.length - 1]);
+            // 95% band ≈ ±1.96·stdErr
+            const band = fit ? 1.96 * fit.stdErr : 0;
+            for (let i = 1; i <= HORIZON; i++) {
+                const x = lastX + i;
+                futureX.push(x);
+                const dt = new Date(lastDate.getTime() + i * DAY);
+                futureLabels.push(String(dt.getDate()).padStart(2, '0') + '/' + String(dt.getMonth() + 1).padStart(2, '0'));
+                const pred = fit ? Math.max(0, fit.slope * x + fit.intercept) : 0;
+                futureY.push(Math.round(pred));
+                bandHi.push(Math.round(pred + band));
+                bandLo.push(Math.round(Math.max(0, pred - band)));
+            }
+
+            // KPIs
+            const recent = ys.slice(-14);
+            const dailyAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+            const next7 = futureY.slice(0, 7).reduce((a, b) => a + b, 0);
+            const next30 = futureY.reduce((a, b) => a + b, 0);
+            const slope = fit ? fit.slope : 0;
+            const r2 = fit ? Math.max(0, fit.r2) : 0;
+
+            document.getElementById('fcDailyAvg').textContent = fmt(Math.round(dailyAvg));
+            document.getElementById('fcDailyAvgDesc').textContent = `last ${recent.length} active days`;
+
+            const tEl = document.getElementById('fcTrend');
+            const arrow = slope >= 0 ? '▲' : '▼';
+            tEl.innerHTML = `<span class="${slope >= 0 ? 'fc-up' : 'fc-down'}">${arrow} ${fmt(Math.abs(Math.round(slope)))}</span>`;
+            document.getElementById('fcTrendDesc').textContent = (slope >= 0 ? 'rising' : 'falling') + ' pcs per day';
+
+            document.getElementById('fcNext7').textContent = fmt(next7);
+            document.getElementById('fcNext30').textContent = fmt(next30);
+
+            const confPct = Math.round(r2 * 100);
+            const confEl = document.getElementById('fcConf');
+            confEl.textContent = confPct + '%';
+            let confWord = confPct >= 70 ? 'strong' : confPct >= 40 ? 'moderate' : 'weak';
+            document.getElementById('fcConfDesc').textContent = `${confWord} model fit (R²)`;
+
+            // ── Chart: monthly totals on a shared Jan→Dec axis, one coloured line per year ──
+            const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const YEAR_COLORS = { '2024': '#9333ea', '2025': '#e11d48', '2026': '#2563eb', '2027': '#059669' };
+            const fallbackColors = ['#0f172a', '#0891b2', '#ca8a04', '#db2777'];
+
+            // sum pieces per year per month-of-year (0-11)
+            const byYM = {};
+            for (const d of data) {
+                const lbl = normaliseDate(d['Date']);          // DD/MM/YYYY
+                if (!lbl) continue;
+                const [dd, mm, yy] = lbl.split('/');
+                const mi = parseInt(mm, 10) - 1;
+                if (isNaN(mi)) continue;
+                (byYM[yy] = byYM[yy] || new Array(12).fill(0))[mi] += n(d['Total PCS.']);
+            }
+            const yearKeys = Object.keys(byYM).sort();
+            const multiYear = yearKeys.length > 1;
+
+            const monthTraces = yearKeys.map((yr, idx) => {
+                const c = YEAR_COLORS[yr] || fallbackColors[idx % fallbackColors.length];
+                // null out months with no production so the line shows a gap instead of dropping to 0
+                const yvals = byYM[yr].map(v => v > 0 ? v : null);
+                return {
+                    x: MONTHS, y: yvals, name: yr,
+                    type: 'scatter', mode: 'lines+markers',
+                    connectgaps: false,
+                    line: { color: c, width: 2.5, shape: 'spline' },
+                    marker: { size: 6, color: c },
+                    hovertemplate: '%{x} ' + yr + ': %{y:,.0f} pcs<extra></extra>'
+                };
+            });
+
+            Plotly.newPlot('forecastChart', monthTraces, {
+                ...PLY,
+                margin: { t: 10, r: 12, b: 40, l: 52 },
+                xaxis: { ...(PLY.xaxis || {}), type: 'category', categoryorder: 'array', categoryarray: MONTHS, tickangle: 0 },
+                yaxis: { ...(PLY.yaxis || {}), title: { text: 'Pieces', font: { size: 10, family: 'Poppins' } }, rangemode: 'tozero' },
+                legend: { orientation: 'h', y: -0.18, font: { size: 11, family: 'Poppins' } }
+            }, CFG);
+
+            // Year-over-year note: compare the latest year's run-rate vs the prior year
+            let yoyNote = '';
+            if (multiYear) {
+                const cur = yearKeys[yearKeys.length - 1], prev = yearKeys[yearKeys.length - 2];
+                const sum = a => a.reduce((s, v) => s + v, 0);
+                const curMonths = byYM[cur].filter(v => v > 0).length;
+                const curTot = sum(byYM[cur]), prevTot = sum(byYM[prev]);
+                // compare same number of months for fairness
+                const prevSame = sum(byYM[prev].slice(0, curMonths));
+                const diff = prevSame ? ((curTot - prevSame) / prevSame * 100) : 0;
+                const dir = diff >= 0 ? 'up' : 'down';
+                yoyNote = ` <b>${cur} vs ${prev}:</b> through ${curMonths} month${curMonths > 1 ? 's' : ''}, ${cur} is ${fmt(curTot)} pcs — ${Math.abs(diff).toFixed(0)}% ${dir} on the same period last year (${fmt(prevSame)} pcs).`;
+            }
+            elNote.innerHTML = `Monthly production totals plotted Jan→Dec.` +
+                (multiYear ? ` Each year has its own colour so you can compare the same months across years.` : '') +
+                yoyNote +
+                ` The KPI cards above project forward from the recent daily run-rate.`;
         }
 
         function renderCatDonut(data) {
@@ -1246,27 +1836,189 @@
             document.getElementById('iBestStyleDesc').textContent = best ? `${fmt(best[1])} pieces` : '';
         }
 
-        function renderTable(data) {
-            document.getElementById('tableBody').innerHTML = data.slice(0, 300).map(d => `
-    <tr>
-      <td>${normaliseDate(d['Date']).slice(0, 8) || '—'}</td>
-      <td>${d['Month'] || '—'}</td>
-      <td><span class="badge ${(d['Category'] || '').toLowerCase()}">${d['Category'] || '—'}</span></td>
-      <td>${d['Packer Name'] || '—'}</td>
-      <td>${d['Style No.'] || '—'}</td>
-      <td>${d['Lot No.'] || '—'}</td>
-      <td>${d['Size'] || '—'}</td>
-      <td style="color:#059669;font-weight:600">${fmt(n(d['Fresh PCS.']))}</td>
-      <td style="color:#d97706;font-weight:600">${fmt(n(d['Alter PCS.']))}</td>
-      <td style="color:#7c3aed;font-weight:600">${fmt(n(d['Mix PCS.']))}</td>
-      <td style="font-weight:700;color:#0f172a">${fmt(n(d['Total PCS.']))}</td>
-    </tr>`).join('');
+        // ─── Table: search, sort, render, export ───
+        let tableSort = { key: 'Date', dir: 'desc' };
+        let tableSearchQuery = '';
+        let tableRows = []; // currently displayed rows (after search + sort)
+        let tableSearchTimer;
+
+        function debouncedTableSearch() {
+            clearTimeout(tableSearchTimer);
+            tableSearchTimer = setTimeout(() => {
+                tableSearchQuery = document.getElementById('tableSearch').value.trim().toLowerCase();
+                renderTable(filteredData);
+            }, 200);
         }
+
+        // attach sort handlers once
+        function initTableHeaders() {
+            document.querySelectorAll('#tableHeadRow th').forEach(th => {
+                if (th.dataset.bound) return;
+                th.dataset.bound = '1';
+                th.addEventListener('click', () => {
+                    const key = th.dataset.key;
+                    if (tableSort.key === key) {
+                        tableSort.dir = tableSort.dir === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        tableSort.key = key;
+                        tableSort.dir = (['Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.', 'Date'].includes(key)) ? 'desc' : 'asc';
+                    }
+                    renderTable(filteredData);
+                });
+            });
+        }
+
+        const NUMERIC_KEYS = ['Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
+
+        function rowMatchesSearch(d, q) {
+            if (!q) return true;
+            const hay = d.__s || ''; // pre-built lowercase blob
+            return q.split(/\s+/).every(term => hay.includes(term));
+        }
+
+        function highlight(text, q) {
+            const s = String(text ?? '—');
+            if (!q) return s;
+            let out = s;
+            q.split(/\s+/).filter(Boolean).forEach(term => {
+                const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                out = out.replace(new RegExp('(' + safe + ')', 'gi'), '<mark>$1</mark>');
+            });
+            return out;
+        }
+
+        function sortRows(rows) {
+            const { key, dir } = tableSort;
+            const mul = dir === 'asc' ? 1 : -1;
+            const isNum = NUMERIC_KEYS.includes(key);
+            return rows.slice().sort((a, b) => {
+                if (key === 'Date') return (dateSortKey(a['Date']) - dateSortKey(b['Date'])) * mul;
+                let va = a[key], vb = b[key];
+                if (isNum) return (n(va) - n(vb)) * mul;
+                va = String(va ?? '').toLowerCase();
+                vb = String(vb ?? '').toLowerCase();
+                // numeric-aware compare for style/lot numbers stored as text
+                const na = parseFloat(va), nb = parseFloat(vb);
+                if (!isNaN(na) && !isNaN(nb) && String(na) === va && String(nb) === vb) return (na - nb) * mul;
+                return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+            });
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll('#tableHeadRow th').forEach(th => {
+                const base = th.textContent.replace(/[▲▼⇅]/g, '').trim();
+                let arrow = '⇅';
+                let cls = '';
+                if (th.dataset.key === tableSort.key) {
+                    arrow = tableSort.dir === 'asc' ? '▲' : '▼';
+                    cls = 'sorted';
+                }
+                th.className = (th.classList.contains('num') ? 'num ' : '') + cls;
+                th.innerHTML = base + ' <span class="arrow">' + arrow + '</span>';
+            });
+        }
+
+        function renderTable(data) {
+            initTableHeaders();
+            const q = tableSearchQuery;
+            let rows = data.filter(d => rowMatchesSearch(d, q));
+            rows = sortRows(rows);
+            tableRows = rows;
+            updateSortIndicators();
+
+            const MAX = 500;
+            const view = rows.slice(0, MAX);
+
+            document.getElementById('tableBody').innerHTML = view.map(d => `
+    <tr>
+      <td>${highlight(normaliseDate(d['Date']).slice(0, 10) || '—', q)}</td>
+      <td>${highlight(d['Month'] || '—', q)}</td>
+      <td><span class="badge ${(d['Category'] || '').toLowerCase()}">${d['Category'] || '—'}</span></td>
+      <td>${highlight(d['Packer Name'] || '—', q)}</td>
+      <td>${highlight(d['Style No.'] || '—', q)}</td>
+      <td>${highlight(d['Lot No.'] || '—', q)}</td>
+      <td>${highlight(d['Size'] || '—', q)}</td>
+      <td class="num" style="color:#059669;font-weight:600">${fmt(n(d['Fresh PCS.']))}</td>
+      <td class="num" style="color:#d97706;font-weight:600">${fmt(n(d['Alter PCS.']))}</td>
+      <td class="num" style="color:#7c3aed;font-weight:600">${fmt(n(d['Mix PCS.']))}</td>
+      <td class="num" style="font-weight:700;color:#0f172a">${fmt(n(d['Total PCS.']))}</td>
+    </tr>`).join('');
+
+            // totals footer (over ALL matching rows, not just the visible 500)
+            let tF = 0, tA = 0, tM = 0, tT = 0;
+            for (const d of rows) { tF += n(d['Fresh PCS.']); tA += n(d['Alter PCS.']); tM += n(d['Mix PCS.']); tT += n(d['Total PCS.']); }
+            document.getElementById('tableFoot').innerHTML = `
+    <tr>
+      <td colspan="7" style="text-align:right">Totals (${fmt(rows.length)} rows)</td>
+      <td class="num">${fmt(tF)}</td>
+      <td class="num">${fmt(tA)}</td>
+      <td class="num">${fmt(tM)}</td>
+      <td class="num">${fmt(tT)}</td>
+    </tr>`;
+
+            const shown = Math.min(rows.length, MAX);
+            document.getElementById('tableSub').textContent =
+                q ? `Search: “${q}” — click any column header to sort` : 'All records — click any column header to sort';
+            document.getElementById('tableFooterNote').innerHTML =
+                `<span>Showing <b>${fmt(shown)}</b> of <b>${fmt(rows.length)}</b> matching rows${rows.length > MAX ? ` (first ${MAX} — refine search or export to see all)` : ''}</span>` +
+                `<span>Sorted by <b>${tableSort.key.replace(' PCS.', '')}</b> ${tableSort.dir === 'asc' ? '↑' : '↓'}</span>`;
+        }
+
+        // ─── Exports ───
+        const EXPORT_COLS = ['Date', 'Month', 'Category', 'Packer Name', 'Style No.', 'Lot No.', 'Size', 'Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
+
+        function exportRows() {
+            // export the current search+sort result (all of it), or full filtered set if no search
+            return (tableRows && tableRows.length) ? tableRows : sortRows(filteredData);
+        }
+        function stamp() {
+            const d = new Date();
+            const p = x => String(x).padStart(2, '0');
+            return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+        }
+        function downloadBlob(content, filename, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+        function exportCSV() {
+            const rows = exportRows();
+            const esc = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+            const header = EXPORT_COLS.join(',');
+            const body = rows.map(d => EXPORT_COLS.map(c => {
+                if (c === 'Date') return esc(normaliseDate(d['Date']));
+                if (NUMERIC_KEYS.includes(c)) return n(d[c]);
+                return esc(d[c]);
+            }).join(',')).join('\n');
+            downloadBlob('\uFEFF' + header + '\n' + body, `packing_report_${stamp()}.csv`, 'text/csv;charset=utf-8;');
+        }
+        function exportJSON() {
+            downloadBlob(JSON.stringify(exportRows(), null, 2), `packing_report_${stamp()}.json`, 'application/json');
+        }
+        function printReport() { window.print(); }
 
         // ─── Fallback demo data ───
         const FALLBACK = [{ "Month": "April", "Date": "2026-03-31T18:30:00.000Z", "Alter PCS.": "", "Fresh PCS.": 427, "Mix PCS.": "", "Size": "28X32", "Style No.": 1841, "Lot No.": 359, "Packer Name": "Sabeel", "Total PCS.": 427, "Category": "Ladies" }, { "Month": "April", "Date": "2026-03-31T18:30:00.000Z", "Alter PCS.": 2, "Fresh PCS.": 423, "Mix PCS.": "", "Size": "32X40", "Style No.": 1841, "Lot No.": 359, "Packer Name": "Sabeel", "Total PCS.": 425, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-01T18:30:00.000Z", "Alter PCS.": "", "Fresh PCS.": 125, "Mix PCS.": "", "Size": "36X40", "Style No.": 16160, "Lot No.": 1360, "Packer Name": "Sabeel", "Total PCS.": 125, "Category": "Mens" }, { "Month": "April", "Date": "2026-04-03T18:30:00.000Z", "Alter PCS.": 4, "Fresh PCS.": 786, "Mix PCS.": "", "Size": "26X30", "Style No.": 1847, "Lot No.": 361, "Packer Name": "Shish Pal", "Total PCS.": 790, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-08T18:30:00.000Z", "Alter PCS.": "", "Fresh PCS.": 514, "Mix PCS.": "", "Size": "26X30", "Style No.": 1834, "Lot No.": 332, "Packer Name": "Shish Pal", "Total PCS.": 514, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-08T18:30:00.000Z", "Alter PCS.": 15, "Fresh PCS.": 502, "Mix PCS.": "", "Size": "26X30", "Style No.": 1844, "Lot No.": 332, "Packer Name": "Shish Pal", "Total PCS.": 517, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-09T18:30:00.000Z", "Alter PCS.": 16, "Fresh PCS.": 574, "Mix PCS.": "", "Size": "32X40", "Style No.": 3250, "Lot No.": 364, "Packer Name": "Sabeel", "Total PCS.": 590, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-14T18:30:00.000Z", "Alter PCS.": 1, "Fresh PCS.": 484, "Mix PCS.": "", "Size": "28X32", "Style No.": 3251, "Lot No.": 362, "Packer Name": "Sabeel", "Total PCS.": 485, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-14T18:30:00.000Z", "Alter PCS.": 2, "Fresh PCS.": 555, "Mix PCS.": "", "Size": "32X40", "Style No.": 3151, "Lot No.": 292, "Packer Name": "Shish Pal", "Total PCS.": 557, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-20T18:30:00.000Z", "Alter PCS.": 10, "Fresh PCS.": 507, "Mix PCS.": 4, "Size": "28X32", "Style No.": 3152, "Lot No.": 310, "Packer Name": "Sabeel", "Total PCS.": 521, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-28T18:30:00.000Z", "Alter PCS.": 11, "Fresh PCS.": 439, "Mix PCS.": "", "Size": "26X30", "Style No.": 1847, "Lot No.": 357, "Packer Name": "Sabeel", "Total PCS.": 450, "Category": "Ladies" }, { "Month": "April", "Date": "2026-04-29T18:30:00.000Z", "Alter PCS.": 5, "Fresh PCS.": 451, "Mix PCS.": "", "Size": "28X34", "Style No.": 4001, "Lot No.": 346, "Packer Name": "Shish Pal", "Total PCS.": 456, "Category": "Ladies" }, { "Month": "May", "Date": "2026-04-30T18:30:00.000Z", "Alter PCS.": 9, "Fresh PCS.": 461, "Mix PCS.": "", "Size": "32X40", "Style No.": 3151, "Lot No.": 309, "Packer Name": "Sabeel", "Total PCS.": 470, "Category": "Ladies" }, { "Month": "May", "Date": "2026-05-01T18:30:00.000Z", "Alter PCS.": 7, "Fresh PCS.": 314, "Mix PCS.": "", "Size": "32X40", "Style No.": 955, "Lot No.": "Nasir", "Packer Name": "Sabeel", "Total PCS.": 321, "Category": "Ladies" }, { "Month": "May", "Date": "2026-05-01T18:30:00.000Z", "Alter PCS.": 9, "Fresh PCS.": 279, "Mix PCS.": "", "Size": "32X40", "Style No.": 952, "Lot No.": "Nasir", "Packer Name": "Shish Pal", "Total PCS.": 288, "Category": "Ladies" }, { "Month": "May", "Date": "2026-05-05T18:30:00.000Z", "Alter PCS.": 1, "Fresh PCS.": 457, "Mix PCS.": "", "Size": "28X32", "Style No.": 3151, "Lot No.": 312, "Packer Name": "Sabeel", "Total PCS.": 458, "Category": "Ladies" }];
 
         // ─── Init ───
+        // ─── Re-fit charts on rotate / resize ───
+        const CHART_IDS = ['trendChart', 'forecastChart', 'catDonut', 'packerBar', 'sizeBar', 'alterDonut', 'scatterChart', 'monthBar', 'alterCatDonut'];
+        let resizeTimer;
+        function resizeCharts() {
+            CHART_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && el.data) { try { Plotly.Plots.resize(el); } catch (e) { } }
+            });
+        }
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(resizeCharts, 200);
+        });
+        window.addEventListener('orientationchange', () => setTimeout(resizeCharts, 300));
+
         window.addEventListener('load', fetchFromAPI);
     </script>
 </body>
