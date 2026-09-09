@@ -5,9 +5,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
     <title>Packing Performance Dashboard</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdn.plot.ly" />
+    <link rel="preconnect" href="https://script.googleusercontent.com" />
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap"
         rel="stylesheet" />
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+    <!-- Plotly is ~3.5 MB uncompressed. As a blocking <script> it held up the
+         parser, so on a cold browser cache the page stayed blank until the whole
+         bundle arrived. Deferred, the shell and the cached data paint while it
+         downloads; charts fill in on its load event. -->
+    <script defer id="plotlySrc" src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -15,20 +23,62 @@
             padding: 0
         }
 
+        /* The `hidden` attribute must beat the explicit `display` values set on
+           .dq-backdrop, .dq-btn, .active-filters and .only-issues — without this
+           those elements ignore `hidden` and are always on screen. */
+        [hidden] {
+            display: none !important
+        }
+
+        :root {
+            --bg: #eef2f7;
+            --surface: #fff;
+            --ink: #0f172a;
+            --ink-2: #475569;
+            --muted: #94a3b8;
+            --line: #e5eaf1;
+            --brand: #2563eb;
+            --teal: #0891b2;
+            --green: #059669;
+            --amber: #d97706;
+            --r-sm: 8px;
+            --r-md: 12px;
+            --r-lg: 16px;
+            --sh-1: 0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+            --sh-2: 0 4px 12px rgba(15, 23, 42, .07), 0 2px 4px rgba(15, 23, 42, .04);
+            --sh-3: 0 12px 28px rgba(15, 23, 42, .10), 0 4px 8px rgba(15, 23, 42, .05)
+        }
+
         html,
         body {
             overflow-x: hidden;
             width: 100%;
-            background: #f0f4f8;
+            background:
+                radial-gradient(900px 420px at 12% -8%, #e0ecff 0%, rgba(224, 236, 255, 0) 62%),
+                radial-gradient(760px 380px at 92% 0%, #dff5f3 0%, rgba(223, 245, 243, 0) 60%),
+                var(--bg);
+            background-attachment: fixed;
             font-family: 'Poppins', sans-serif;
-            color: #1e293b
+            color: #1e293b;
+            -webkit-font-smoothing: antialiased
+        }
+
+        /* Visible keyboard focus on every interactive control */
+        a:focus-visible,
+        button:focus-visible,
+        select:focus-visible,
+        input:focus-visible {
+            outline: 2px solid var(--brand);
+            outline-offset: 2px
         }
 
         /* ─── Compact Header ─── */
         .header {
-            background: #fff;
-            border-bottom: 1px solid #e2e8f0;
-            padding: 12px 20px;
+            background: rgba(255, 255, 255, .82);
+            backdrop-filter: saturate(180%) blur(12px);
+            -webkit-backdrop-filter: saturate(180%) blur(12px);
+            border-bottom: 1px solid var(--line);
+            padding: 11px 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -37,7 +87,17 @@
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, .06)
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .05)
+        }
+
+        .header-logo {
+            display: grid;
+            place-items: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #dbeafe, #cffafe);
+            box-shadow: inset 0 0 0 1px rgba(37, 99, 235, .12)
         }
 
         .header-left {
@@ -75,8 +135,8 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            background: #f8fafc;
-            border: 1px solid #e2e8f0;
+            background: #f5f8fc;
+            border: 1px solid var(--line);
             border-radius: 999px;
             padding: 6px 14px;
             font-size: 12px;
@@ -108,10 +168,10 @@
 
         .refresh-btn {
             background: #eff6ff;
-            color: #2563eb;
+            color: var(--brand);
             border: 1px solid #bfdbfe;
-            padding: 6px 14px;
-            border-radius: 8px;
+            padding: 7px 14px;
+            border-radius: var(--r-sm);
             font-size: 12px;
             font-weight: 600;
             font-family: 'Poppins', sans-serif;
@@ -123,8 +183,10 @@
         }
 
         .refresh-btn:hover {
-            background: #2563eb;
-            color: #fff
+            background: var(--brand);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
+            transform: translateY(-1px)
         }
 
         .refresh-btn:disabled {
@@ -136,6 +198,459 @@
             font-size: 11px;
             color: #94a3b8;
             font-weight: 500
+        }
+
+        .live-badge {
+            display: none;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 8px;
+            border: 1px solid currentColor;
+            border-radius: 10px
+        }
+
+        /* ─── Data-issue badge ─── */
+        .dq-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #fffbeb;
+            border: 1px solid #fcd34d;
+            color: #b45309;
+            border-radius: 999px;
+            padding: 5px 11px 5px 9px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background .18s, box-shadow .18s, transform .18s;
+            animation: dqPulse 2.6s ease-in-out 3
+        }
+
+        .dq-btn:hover {
+            background: #fef3c7;
+            box-shadow: 0 4px 12px rgba(180, 83, 9, .18);
+            transform: translateY(-1px)
+        }
+
+        .dq-btn:focus-visible {
+            outline: 2px solid #b45309;
+            outline-offset: 2px
+        }
+
+        .dq-warn {
+            font-size: 13px;
+            line-height: 1
+        }
+
+        .dq-count {
+            background: #b45309;
+            color: #fff;
+            border-radius: 999px;
+            min-width: 18px;
+            padding: 1px 6px;
+            font-size: 11px;
+            text-align: center
+        }
+
+        @keyframes dqPulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(180, 83, 9, 0)
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(180, 83, 9, .12)
+            }
+        }
+
+        /* ─── Data-issue panel ─── */
+        .dq-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, .45);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            backdrop-filter: blur(2px)
+        }
+
+        .dq-modal {
+            background: #fff;
+            border-radius: 16px;
+            width: min(860px, 100%);
+            max-height: min(86vh, 780px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, .3);
+            animation: dqIn .22s ease
+        }
+
+        @keyframes dqIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px) scale(.98)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        .dq-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 18px 12px;
+            border-bottom: 1px solid #e2e8f0
+        }
+
+        .dq-title {
+            font-size: 16px;
+            font-weight: 800;
+            color: #0f172a
+        }
+
+        .dq-sub {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 2px
+        }
+
+        .dq-close {
+            background: #f1f5f9;
+            border: none;
+            border-radius: 8px;
+            width: 30px;
+            height: 30px;
+            font-size: 14px;
+            color: #475569;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background .15s
+        }
+
+        .dq-close:hover {
+            background: #e2e8f0
+        }
+
+        .dq-note {
+            padding: 10px 18px;
+            font-size: 12px;
+            color: #92400e;
+            background: #fffbeb;
+            border-bottom: 1px solid #fef3c7;
+            line-height: 1.5
+        }
+
+        .dq-tabs {
+            display: flex;
+            gap: 6px;
+            padding: 12px 18px 10px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #f1f5f9
+        }
+
+        .dq-chip {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 999px;
+            padding: 5px 11px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            color: #475569;
+            cursor: pointer;
+            transition: all .15s
+        }
+
+        .dq-chip b {
+            margin-left: 3px;
+            color: #0f172a
+        }
+
+        .dq-chip:hover {
+            border-color: #cbd5e1;
+            background: #f1f5f9
+        }
+
+        .dq-chip.on {
+            background: #0f172a;
+            border-color: #0f172a;
+            color: #fff
+        }
+
+        .dq-chip.on b {
+            color: #fff
+        }
+
+        .dq-list {
+            overflow-y: auto;
+            padding: 8px 10px 12px;
+            flex: 1 1 auto
+        }
+
+        .dq-hint {
+            font-size: 11px;
+            color: #64748b;
+            padding: 6px 8px 10px
+        }
+
+        .dq-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 8px;
+            border-radius: 10px;
+            border-bottom: 1px solid #f1f5f9
+        }
+
+        .dq-item:hover {
+            background: #f8fafc
+        }
+
+        .dq-item-icon {
+            font-size: 15px;
+            line-height: 1.3;
+            flex-shrink: 0;
+            width: 20px;
+            text-align: center
+        }
+
+        .dq-item-body {
+            /* basis 0, not auto: a long message must shrink beside the icon
+               rather than wrap onto its own line */
+            flex: 1 1 0;
+            min-width: 0
+        }
+
+        .dq-item-top {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 2px
+        }
+
+        .dq-rec {
+            font-size: 11px;
+            font-weight: 700;
+            color: #0f172a
+        }
+
+        .dq-sheet {
+            font-size: 10px;
+            color: #94a3b8;
+            background: #f1f5f9;
+            border-radius: 4px;
+            padding: 1px 5px;
+            cursor: help
+        }
+
+        .dq-field {
+            font-size: 10px;
+            font-weight: 700;
+            color: #b45309;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 4px;
+            padding: 1px 5px
+        }
+
+        .dq-msg {
+            font-size: 12px;
+            color: #334155;
+            line-height: 1.45;
+            word-break: break-word
+        }
+
+        .dq-ctx {
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 2px;
+            word-break: break-word
+        }
+
+        .dq-jump {
+            flex-shrink: 0;
+            background: #fff;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            padding: 5px 9px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            color: #0f172a;
+            cursor: pointer;
+            transition: all .15s
+        }
+
+        .dq-jump:hover {
+            background: #0ea5e9;
+            border-color: #0ea5e9;
+            color: #fff
+        }
+
+        .dq-empty {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 12px;
+            padding: 26px
+        }
+
+        .dq-foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 18px;
+            border-top: 1px solid #e2e8f0;
+            background: #f8fafc;
+            flex-wrap: wrap
+        }
+
+        .dq-footnote {
+            font-size: 11px;
+            color: #64748b
+        }
+
+        /* ─── Active filter chips ─── */
+        .active-filters {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: -10px 0 16px
+        }
+
+        .af-lead {
+            font-size: 10px;
+            font-weight: 700;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: .8px
+        }
+
+        .af-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            padding: 4px 9px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            color: #1e40af;
+            cursor: pointer;
+            transition: all .15s;
+            max-width: 100%
+        }
+
+        .af-chip:hover {
+            background: #dbeafe;
+            border-color: #93c5fd
+        }
+
+        .af-key {
+            font-weight: 700;
+            opacity: .7
+        }
+
+        .af-val {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 160px
+        }
+
+        .af-x {
+            opacity: .5;
+            font-size: 10px
+        }
+
+        .af-chip:hover .af-x {
+            opacity: 1;
+            color: #dc2626
+        }
+
+        .af-clear {
+            background: none;
+            border: none;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            color: #94a3b8;
+            cursor: pointer;
+            text-decoration: underline;
+            padding: 4px
+        }
+
+        .af-clear:hover {
+            color: #dc2626
+        }
+
+        /* ─── Flagged rows in the table ─── */
+        .only-issues {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #b45309;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 8px;
+            padding: 7px 10px;
+            cursor: pointer;
+            white-space: nowrap
+        }
+
+        .only-issues input {
+            accent-color: #b45309;
+            cursor: pointer
+        }
+
+        tbody tr.has-issue {
+            background: #fffdf5
+        }
+
+        tbody tr.has-issue td:first-child {
+            box-shadow: inset 3px 0 0 #f59e0b
+        }
+
+        .cell-bad {
+            color: #dc2626;
+            font-weight: 600;
+            background: #fef2f2;
+            border-radius: 4px;
+            padding: 1px 5px;
+            cursor: help;
+            white-space: nowrap
+        }
+
+        @keyframes rowFlash {
+
+            0%,
+            100% {
+                background: transparent
+            }
+
+            25%,
+            60% {
+                background: #fef08a
+            }
+        }
+
+        tbody tr.row-flash {
+            animation: rowFlash 1.8s ease
         }
 
         /* ─── Loading State ─── */
@@ -208,11 +723,12 @@
             gap: 12px;
             flex-wrap: wrap;
             margin-bottom: 20px;
-            background: #fff;
-            border: 1px solid #e2e8f0;
-            border-radius: 12px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--r-lg);
             padding: 16px;
-            align-items: flex-end
+            align-items: flex-end;
+            box-shadow: var(--sh-1)
         }
 
         .filter-bar>div {
@@ -289,21 +805,19 @@
         }
 
         .kpi-card {
-            background: #fff;
-            border-radius: 12px;
-            padding: 13px 12px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
-            border: 1px solid #e2e8f0;
+            background: var(--surface);
+            border-radius: var(--r-lg);
+            padding: 14px 14px 15px;
+            box-shadow: var(--sh-1);
+            border: 1px solid var(--line);
             position: relative;
             overflow: hidden;
-            transition: transform .2s, box-shadow .2s;
-            opacity: 0;
-            transform: translateY(16px)
+            transition: transform .2s, box-shadow .2s
         }
 
         .kpi-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 0, 0, .08)
+            transform: translateY(-3px);
+            box-shadow: var(--sh-3)
         }
 
         .kpi-card::before {
@@ -312,7 +826,8 @@
             left: 0;
             top: 0;
             bottom: 0;
-            width: 3px
+            width: 4px;
+            border-radius: 0 4px 4px 0
         }
 
         .kpi-card.blue::before {
@@ -332,14 +847,15 @@
         }
 
         .kpi-icon {
-            width: 30px;
-            height: 30px;
-            border-radius: 8px;
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 15px;
-            margin-bottom: 8px
+            font-size: 16px;
+            margin-bottom: 9px;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .05)
         }
 
         .kpi-icon.blue {
@@ -422,25 +938,62 @@
         }
 
         .chart-card {
-            background: #fff;
-            border-radius: 12px;
-            padding: 14px 12px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
-            border: 1px solid #e2e8f0;
+            background: var(--surface);
+            border-radius: var(--r-lg);
+            padding: 15px 14px;
+            box-shadow: var(--sh-1);
+            border: 1px solid var(--line);
             transition: transform .2s, box-shadow .2s;
-            opacity: 0;
-            transform: translateY(16px);
             min-width: 0;
             overflow: hidden
         }
 
         .chart-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 16px rgba(0, 0, 0, .07)
+            transform: translateY(-3px);
+            box-shadow: var(--sh-2)
         }
 
         .chart-card.full {
             grid-column: 1/-1
+        }
+
+        /* Card header with a control in the right corner */
+        .card-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap
+        }
+
+        .card-head-txt {
+            min-width: 0
+        }
+
+        .card-select {
+            flex: 0 0 auto;
+            background: #f5f8fc;
+            border: 1px solid var(--line);
+            border-radius: var(--r-sm);
+            padding: 5px 9px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink);
+            cursor: pointer;
+            outline: none;
+            max-width: 100%;
+            transition: border-color .15s, box-shadow .15s
+        }
+
+        .card-select:hover {
+            border-color: #cbd5e1
+        }
+
+        .card-select:focus {
+            border-color: var(--brand);
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, .1)
         }
 
         .chart-title {
@@ -471,13 +1024,11 @@
         }
 
         .insight-card {
-            background: linear-gradient(135deg, #f8fafc, #eff6ff);
-            border-radius: 12px;
-            padding: 14px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, .05);
-            border: 1px solid #e2e8f0;
-            opacity: 0;
-            transform: translateY(16px);
+            background: linear-gradient(135deg, #fbfdff, #eef4ff);
+            border-radius: var(--r-lg);
+            padding: 15px;
+            box-shadow: var(--sh-1);
+            border: 1px solid var(--line);
             transition: transform .2s, box-shadow .2s;
             display: flex;
             align-items: center;
@@ -485,8 +1036,8 @@
         }
 
         .insight-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 16px rgba(0, 0, 0, .07)
+            transform: translateY(-3px);
+            box-shadow: var(--sh-2)
         }
 
         .insight-icon-wrap {
@@ -527,8 +1078,8 @@
         /* ─── Table ─── */
         .table-wrap {
             overflow-x: auto;
-            border-radius: 10px;
-            border: 1px solid #e2e8f0
+            border-radius: var(--r-md);
+            border: 1px solid var(--line)
         }
 
         table {
@@ -539,8 +1090,8 @@
         }
 
         thead th {
-            background: #f8fafc;
-            padding: 8px 10px;
+            background: #f5f8fc;
+            padding: 9px 10px;
             text-align: left;
             font-weight: 700;
             color: #64748b;
@@ -602,9 +1153,73 @@
 
         /* ─── Anim ─── */
         @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px)
+            }
+
             to {
                 opacity: 1;
                 transform: translateY(0)
+            }
+        }
+
+        /* Entrance is a class that JS removes on animationend. It used to be an
+           inline `animation: … forwards`, which pinned transform:translateY(0)
+           at animation priority — that outranks normal author rules, so the
+           :hover lift on every card was silently dead. */
+        .anim-in {
+            animation: fadeUp .45s ease both
+        }
+
+        /* Placeholders shown while the deferred chart library is still loading,
+           so a cold load shows the dashboard's shape instead of blank boxes. */
+        .skeleton {
+            border-radius: 8px;
+            background: linear-gradient(90deg, #f1f5f9 25%, #e6ecf3 37%, #f1f5f9 63%);
+            background-size: 400% 100%;
+            animation: shimmer 1.4s ease infinite
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: 100% 0
+            }
+
+            100% {
+                background-position: 0 0
+            }
+        }
+
+        .chart-msg {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            font-size: 11px;
+            font-weight: 500;
+            color: #94a3b8;
+            text-align: center;
+            padding: 10px
+        }
+
+        .table-empty {
+            text-align: center;
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 26px 10px
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .01ms !important;
+                scroll-behavior: auto !important
             }
         }
         /* ─── Table toolbar + sorting + export ─── */
@@ -666,6 +1281,7 @@
             user-select: none;
             position: sticky;
             top: 0;
+            z-index: 2;
             white-space: nowrap
         }
 
@@ -695,6 +1311,7 @@
         #dataTable tfoot td {
             position: sticky;
             bottom: 0;
+            z-index: 2;
             background: #f1f5f9;
             font-weight: 700;
             color: #0f172a;
@@ -726,8 +1343,17 @@
             .refresh-btn,
             #loadingBar,
             #loadingOverlay,
+            .dq-backdrop,
+            .af-x,
+            .af-clear,
             .chart-row {
                 display: none !important
+            }
+
+            /* keep the active-filter chips: a printed report must say what it
+               was filtered to */
+            .active-filters {
+                margin-bottom: 12px
             }
 
             .table-wrap {
@@ -851,13 +1477,24 @@
                 padding: 9px
             }
 
-            /* KPI + chart titles a touch smaller */
-            .kpi-val {
-                font-size: 22px
+            /* KPI + chart titles a touch smaller. This rule targeted `.kpi-val`,
+               a class that does not exist, so it never applied. Capped at the
+               intended 22px but allowed to shrink so a 7-figure total still
+               fits on a 320px screen. */
+            .kpi-value {
+                font-size: clamp(17px, 5.5vw, 22px)
             }
 
             .chart-card {
                 padding: 12px
+            }
+
+            /* The month picker wraps under the title here — give it the full
+               width as a proper tap target. 16px also stops iOS zooming on focus. */
+            .card-select {
+                width: 100%;
+                padding: 9px 10px;
+                font-size: 16px
             }
 
             .chart-title {
@@ -909,6 +1546,44 @@
             }
         }
 
+        @media (max-width: 640px) {
+
+            /* Issue panel becomes a full-height sheet on phones */
+            .dq-backdrop {
+                padding: 0;
+                align-items: flex-end
+            }
+
+            .dq-modal {
+                max-height: 92vh;
+                border-radius: 16px 16px 0 0;
+                width: 100%
+            }
+
+            .dq-item {
+                flex-wrap: wrap
+            }
+
+            .dq-jump {
+                margin-left: 30px;
+                width: calc(100% - 30px);
+                padding: 7px
+            }
+
+            .dq-foot .exp-btn {
+                flex: 1 1 100%
+            }
+
+            .only-issues {
+                flex: 1 1 100%;
+                justify-content: center
+            }
+
+            .af-val {
+                max-width: 110px
+            }
+        }
+
         @media (max-width: 380px) {
             .forecast-kpis {
                 grid-template-columns: 1fr
@@ -935,13 +1610,17 @@
             <span class="header-logo">📦</span>
             <div>
                 <div class="header-title">Packing Performance Dashboard</div>
-                <div class="header-sub">Real-time · April – May 2026</div>
+                <div class="header-sub" id="headerRange">Real-time production overview</div>
             </div>
         </div>
         <div class="header-right">
             <div class="record-pill"><span class="live-dot"></span><span id="recordCount">Loading…</span></div>
             <span class="last-updated" id="lastUpdated"></span>
-            <span id="liveBadge" style="display:none;font-size:11px;font-weight:600;padding:2px 8px;border:1px solid currentColor;border-radius:10px"></span>
+            <span id="liveBadge" class="live-badge"></span>
+            <!-- Appears only when the sheet has rows that cannot be trusted -->
+            <button class="dq-btn" id="dqBtn" onclick="toggleIssues()" hidden aria-haspopup="dialog">
+                <span class="dq-warn" aria-hidden="true">⚠</span><span class="dq-count" id="dqCount">0</span>
+            </button>
             <button class="refresh-btn" id="refreshBtn" onclick="fetchFromAPI(true)">⟳ Refresh</button>
         </div>
     </div>
@@ -977,6 +1656,9 @@
                     onclick="clearFilters()">✕ Clear</button></div>
         </div>
 
+        <!-- What is currently narrowing the numbers below -->
+        <div class="active-filters" id="activeFilters" hidden></div>
+
         <!-- KPIs -->
         <div class="kpi-grid">
             <div class="kpi-card blue">
@@ -1008,8 +1690,14 @@
         <!-- Row 1: Trend + Category -->
         <div class="chart-row row-2">
             <div class="chart-card">
-                <div class="chart-title">Daily Production Trend</div>
-                <div class="chart-sub">Total pieces packed per day by category</div>
+                <div class="card-head">
+                    <div class="card-head-txt">
+                        <div class="chart-title">Daily Production Trend</div>
+                        <div class="chart-sub" id="trendSub">Total pieces packed per day by category</div>
+                    </div>
+                    <select class="card-select" id="fTrendMonth" onchange="onTrendMonthChange(this.value)"
+                        aria-label="Month shown in the daily production trend"></select>
+                </div>
                 <div id="trendChart" style="height:210px"></div>
             </div>
             <div class="chart-card">
@@ -1019,41 +1707,53 @@
             </div>
         </div>
 
-        <!-- Row 2: Packer + Size + Alter Rate -->
-        <div class="chart-row row-3">
-            <div class="chart-card">
-                <div class="chart-title">Packer Performance</div>
-                <div class="chart-sub">Fresh, Alter &amp; Mix per packer</div>
-                <div id="packerBar" style="height:210px"></div>
-            </div>
-            <div class="chart-card">
-                <div class="chart-title">Size Distribution</div>
-                <div class="chart-sub">Top sizes by volume</div>
-                <div id="sizeBar" style="height:210px"></div>
-            </div>
-            <div class="chart-card">
-                <div class="chart-title">Alter Rate by Packer</div>
-                <div class="chart-sub">Altered % of total — lower is better</div>
-                <div id="alterDonut" style="height:210px"></div>
+        <!-- Row 2: Year-on-year monthly comparison (needs the full width) -->
+        <div class="chart-row">
+            <div class="chart-card full">
+                <div class="card-head">
+                    <div class="card-head-txt">
+                        <div class="chart-title">Monthly Totals by Year</div>
+                        <div class="chart-sub" id="monthSub">Same month compared across years</div>
+                    </div>
+                    <select class="card-select" id="fMonthYear" onchange="onMonthYearChange(this.value)"
+                        aria-label="Years shown in the monthly comparison">
+                        <option value="">All years</option>
+                    </select>
+                </div>
+                <div id="monthBar" style="height:260px"></div>
             </div>
         </div>
 
-        <!-- Row 3: Scatter + Month + Category Alter -->
+        <!-- Row 3: Packer output + quality -->
         <div class="chart-row row-3">
             <div class="chart-card">
-                <div class="chart-title">Fresh vs Alter</div>
-                <div class="chart-sub">Per-entry relationship</div>
-                <div id="scatterChart" style="height:200px"></div>
+                <div class="chart-title">Packer Performance</div>
+                <div class="chart-sub" id="packerSub">Fresh, Alter &amp; Mix per packer</div>
+                <div id="packerBar" style="height:230px"></div>
             </div>
             <div class="chart-card">
-                <div class="chart-title">Month Comparison</div>
-                <div class="chart-sub">April vs May totals</div>
-                <div id="monthBar" style="height:200px"></div>
+                <div class="chart-title">Alter Rate by Packer</div>
+                <div class="chart-sub" id="alterSub">Altered % of each packer's output — lower is better</div>
+                <div id="alterDonut" style="height:230px"></div>
             </div>
             <div class="chart-card">
                 <div class="chart-title">Alter % by Category</div>
-                <div class="chart-sub">Rework rate — Ladies vs Mens</div>
-                <div id="alterCatDonut" style="height:200px"></div>
+                <div class="chart-sub" id="alterCatSub">Rework rate per category — lower is better</div>
+                <div id="alterCatDonut" style="height:230px"></div>
+            </div>
+        </div>
+
+        <!-- Row 4: Size mix + per-entry spread -->
+        <div class="chart-row row-2">
+            <div class="chart-card">
+                <div class="chart-title">Size Distribution</div>
+                <div class="chart-sub" id="sizeSub">Top sizes by volume</div>
+                <div id="sizeBar" style="height:230px"></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-title">Fresh vs Alter</div>
+                <div class="chart-sub" id="scatterSub">Per-entry relationship</div>
+                <div id="scatterChart" style="height:230px"></div>
             </div>
         </div>
 
@@ -1132,6 +1832,10 @@
                 <div class="table-tools">
                     <input type="text" id="tableSearch" class="table-search"
                         placeholder="🔍 Search anything — packer, style, lot, size…" oninput="debouncedTableSearch()" />
+                    <label class="only-issues" id="onlyIssuesWrap" hidden>
+                        <input type="checkbox" id="onlyIssues" onchange="toggleOnlyIssues(this.checked)" />
+                        <span>Only rows with issues</span>
+                    </label>
                     <button class="exp-btn" onclick="exportCSV()">⬇ CSV</button>
                     <button class="exp-btn" onclick="exportJSON()">⬇ JSON</button>
                     <button class="exp-btn" onclick="printReport()">🖨 Print</button>
@@ -1163,34 +1867,129 @@
 
     </div><!-- /main -->
 
+    <!-- ─── Data issue details ─── -->
+    <div class="dq-backdrop" id="dqPanel" hidden onclick="if(event.target===this)closeIssues()">
+        <div class="dq-modal" role="dialog" aria-modal="true" aria-labelledby="dqTitle">
+            <div class="dq-head">
+                <div class="dq-head-txt">
+                    <div class="dq-title" id="dqTitle">⚠ Data issues found</div>
+                    <div class="dq-sub" id="dqSub"></div>
+                </div>
+                <button class="dq-close" id="dqClose" onclick="closeIssues()" aria-label="Close">✕</button>
+            </div>
+            <div class="dq-note">
+                These rows came back from the sheet with something wrong. Fix them at
+                the source, then hit Refresh.
+            </div>
+            <div class="dq-tabs" id="dqTabs"></div>
+            <div class="dq-list" id="dqList"></div>
+            <div class="dq-foot">
+                <span class="dq-footnote" id="dqFootNote"></span>
+                <button class="exp-btn" onclick="exportIssuesCSV()">⬇ Export all issues (CSV)</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        const API_URL = 'https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnTrkxl5DzLby0cKrrqUwlLAA1i-Pciw4LGLWvDmCHtIzfZ5WqlEfwvC8QpyQErf7Qx29rWYjhcAbUq7oVEpSqXhcMzhRy3pXVZC2Z3HckX9bb-XrHHT93OO1V1Ewg7Y8Hjj2TEbmP0p5kynuzusgdWo1ezexVAcjRTX1uCeWUa0QKvL984FpgU795Y7XMqwYDwLlWykONcBHThA03MVWXZYiFkm3HswOJ4A72BAClBQmFFbhzt0pCScALfkdjIDgsA0g_zQGN65_nUKJiP_h_WSW1UWjQ&lib=MqtZhu1Q8rOjJDbP0eBW7mCU-P2DTP4Ui';
+        const API_URL = 'https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnR4na-psbpwY0IXTfoagW5jyen_WvjoIBDQfv5EXbHc5WCwSEZSv1Q3gFTb1PxYsOTDRX4HYBU2LSlbwEYaR6Pdw0hQNkWrjMBsLXQB5KkL3Rwv7tgbTJqRGiqNE2Y6To-gXnKL0VzeiVX-1f9Qs4X_YMJ-fRbcxU1r0c_CYW6wpbqKNlwDccKcn7051rO7UbjXT8mUSSgt130Wk_tOPQROpuacEzKXO7sgd-KVEBtdnzWqOjBTp2OR0xnTqhGucLDLdSxkQ2oQL8ma3VVWRCwnZhMRIQ&lib=MqtZhu1Q8rOjJDbP0eBW7mCU-P2DTP4Ui';
 
         let allData = [], filteredData = [];
 
+        // Plotly is deferred, so it is not available when this script first runs.
+        // Everything except the charts renders without it.
+        let plotlyReady = (typeof Plotly !== 'undefined');
+        let plotlyFailed = false;
+        const REDUCED_MOTION = window.matchMedia &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        // ─── Cold-cache fix: start the network request NOW ───
+        // This used to be bound to window.load, which only fires after every
+        // subresource — including the ~3.5 MB Plotly bundle — has downloaded.
+        // On a cold browser cache the API call did not even begin until Plotly
+        // had fully arrived, so the "instant paint from cache" never happened.
+        // Firing it here runs the request in parallel with that download.
+        const FETCH_TIMEOUT = 20000;
+
+        function startLiveFetch() {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), FETCH_TIMEOUT);
+            const p = fetch(API_URL, { cache: 'no-store', signal: ctl.signal })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .finally(() => clearTimeout(timer));
+            p.catch(() => { });   // consumer attaches later; don't trip "unhandled rejection"
+            return p;
+        }
+
+        let livePromise = startLiveFetch();
+
         // ─── Date helpers ───
-        function isoToIST(isoStr) {
-            // API sends UTC ISO, but data is Indian (IST = UTC+5:30)
-            const d = new Date(isoStr);
-            const ist = new Date(d.getTime() + 330 * 60000);
-            const day = String(ist.getUTCDate()).padStart(2, '0');
-            const mon = String(ist.getUTCMonth() + 1).padStart(2, '0');
-            const yr = ist.getUTCFullYear();
-            return `${day}/${mon}/${yr}`;
+        // One validating parser sits behind every date read. The old isoToIST()
+        // called new Date(v) and formatted the result with no validity check, so
+        // a malformed cell silently produced the string "NaN/NaN/NaN" — which
+        // then flowed into the table, the trend chart, and the Year dropdown as
+        // a literal "NaN" option. Bad values are now reported, never rendered.
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'];
+        const IST_OFFSET = 330 * 60000;   // data is Indian; the API sends UTC
+
+        function pad2(x) { return String(x).padStart(2, '0'); }
+
+        function buildDate(y, mIdx, day, raw) {
+            if (!(y >= 1900 && y <= 2999) || mIdx < 0 || mIdx > 11 || day < 1 || day > 31)
+                return { ok: false, reason: 'date parts out of range', raw: raw };
+            const d = new Date(Date.UTC(y, mIdx, day));
+            // catches 31/02 style values that JS would silently roll forward
+            if (d.getUTCFullYear() !== y || d.getUTCMonth() !== mIdx || d.getUTCDate() !== day)
+                return { ok: false, reason: 'that calendar date does not exist', raw: raw };
+            return {
+                ok: true, key: d.getTime(), y: y, mIdx: mIdx, day: day,
+                display: pad2(day) + '/' + pad2(mIdx + 1) + '/' + y,
+                monthName: MONTH_NAMES[mIdx], raw: raw
+            };
         }
-        function getYearFromDate(dateVal) {
-            if (!dateVal) return '';
-            if (typeof dateVal === 'string' && dateVal.includes('T')) {
-                const d = new Date(dateVal);
-                const ist = new Date(d.getTime() + 330 * 60000);
-                return String(ist.getUTCFullYear());
+
+        function parseRowDate(v) {
+            if (v === null || v === undefined || String(v).trim() === '')
+                return { ok: false, reason: 'date cell is blank', raw: v };
+            if (v instanceof Date) {
+                if (isNaN(v.getTime())) return { ok: false, reason: 'invalid date value', raw: v };
+                const ist = new Date(v.getTime() + IST_OFFSET);
+                return buildDate(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), v);
             }
-            const parts = String(dateVal).split('/');
-            if (parts.length === 3) {
-                return parts[2];
+            if (typeof v === 'number')
+                return { ok: false, reason: 'plain number, not a date — format the sheet cell as a date', raw: v };
+
+            const s = String(v).trim();
+            let m;
+            // ISO timestamp from Apps Script (UTC) → shift into IST
+            if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+                const t = Date.parse(s);
+                if (isNaN(t)) return { ok: false, reason: 'unreadable ISO timestamp', raw: v };
+                const ist = new Date(t + IST_OFFSET);
+                return buildDate(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), v);
             }
-            return '';
+            if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)))      // YYYY-MM-DD
+                return buildDate(+m[1], +m[2] - 1, +m[3], v);
+            if ((m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/))) {   // DD/MM/YYYY & friends
+                let day = +m[1], mon = +m[2], yr = +m[3];
+                if (yr < 100) yr += 2000;
+                if (mon > 12 && day <= 12)
+                    return { ok: false, reason: 'day and month look swapped — expected DD/MM/YYYY', raw: v };
+                return buildDate(yr, mon - 1, day, v);
+            }
+            return { ok: false, reason: 'unrecognised date format — use DD/MM/YYYY', raw: v };
         }
+
+        // Parsed once per row and memoised. `__`-prefixed keys are internal and
+        // are stripped before caching or exporting (see stripIndex).
+        function rowDate(row) {
+            if (!row.__d) row.__d = parseRowDate(row['Date']);
+            return row.__d;
+        }
+
         let debounceTimer;
         function debouncedApplyFilters() {
             clearTimeout(debounceTimer);
@@ -1198,50 +1997,120 @@
                 applyFilters();
             }, 250);
         }
-        function isoToLabel(isoStr) {
-            const d = new Date(isoStr);
-            const ist = new Date(d.getTime() + 330 * 60000);
-            const day = String(ist.getUTCDate()).padStart(2, '0');
-            const mon = String(ist.getUTCMonth() + 1).padStart(2, '0');
-            return `${day}/${mon}`;
-        }
+
         function normaliseDate(d) {
-            if (!d) return '';
-            if (typeof d === 'string' && d.includes('T')) return isoToIST(d);
-            return d; // already DD/MM/YYYY from demo
+            const p = parseRowDate(d);
+            return p.ok ? p.display : '';
         }
-        function dateLabel(d) {
-            if (!d) return '';
-            const s = normaliseDate(d);
-            return s.slice(0, 5); // DD/MM
+        function getYearFromDate(dateVal) {
+            const p = parseRowDate(dateVal);
+            return p.ok ? String(p.y) : '';
         }
+        // Returns milliseconds (was a Date object). Always finite, so comparators
+        // stay well-defined even when a row's date is unusable.
         function dateSortKey(d) {
-            const s = normaliseDate(d);
-            const [dd, mm, yy] = s.split('/');
-            return new Date(`${yy}-${mm}-${dd}`);
+            const p = parseRowDate(d);
+            return p.ok ? p.key : 0;
         }
         function n(v) { return Number(v) || 0; }
         function fmt(v) { return Number(v).toLocaleString(); }
+        // Compact form for bar labels when a full number would not fit
+        function fmtK(v) {
+            v = Number(v) || 0;
+            if (v >= 100000) return (v / 1000).toFixed(0) + 'k';
+            if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+            return String(Math.round(v));
+        }
 
         // ─── API Fetch (cache-first + parallel live) ───
-        const CACHE_KEY = 'packing_dash_cache_v1';
+        // v2: rows are stored WITHOUT the __s search blob (see stripIndex).
+        const CACHE_KEY = 'packing_dash_cache_v2';
+        const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;   // a week-old cache is not worth painting
+        const CACHE_TRIM_ROWS = 4000;                    // fallback size if the quota is hit
 
         function readCache() {
             try {
                 const raw = localStorage.getItem(CACHE_KEY);
                 if (!raw) return null;
                 const obj = JSON.parse(raw);
-                if (obj && Array.isArray(obj.data) && obj.data.length) return obj;
+                if (!obj || !Array.isArray(obj.data) || !obj.data.length) return null;
+                if (!obj.ts || (Date.now() - obj.ts) > CACHE_MAX_AGE) {
+                    localStorage.removeItem(CACHE_KEY);   // stale — fetch fresh instead
+                    return null;
+                }
+                return obj;
             } catch (e) { }
             return null;
         }
-        function writeCache(data) {
-            try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts: Date.now() })); } catch (e) { }
+
+        // buildSearchIndex mutates every row with a lowercase `__s` blob built
+        // from 10 fields. The old code cached rows *after* that ran, inflating
+        // stored size by ~30% (measured: 780 KB vs 591 KB over 3k rows) for data
+        // that is rebuilt on load anyway. Near the ~5 MB localStorage quota that
+        // overhead is what tips setItem into throwing — and the old writeCache
+        // swallowed the error silently, so the cache was never written and every
+        // load was a cold load with no visible symptom.
+        // Strips every `__`-prefixed internal key (search blob, parsed date,
+        // row index) — none of them belong in storage or in a downloaded report.
+        function stripIndex(rows) {
+            return rows.map(r => {
+                const c = {};
+                for (const k in r) if (k.slice(0, 2) !== '__') c[k] = r[k];
+                return c;
+            });
         }
+
+        let cacheHealthy = true;
+
+        function writeCache(data) {
+            const clean = stripIndex(data);
+            const put = (rows, partialOf) => {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    v: 2, ts: Date.now(), partial: partialOf || 0, data: rows
+                }));
+            };
+            try {
+                put(clean, 0);
+                cacheHealthy = true;
+                return true;
+            } catch (e) {
+                // Quota exceeded — drop the stale entry and retry with the most
+                // recent rows so the next load is still warm, flagged as partial
+                // rather than passing an incomplete set off as the whole dataset.
+                try {
+                    localStorage.removeItem(CACHE_KEY);
+                    if (clean.length > CACHE_TRIM_ROWS) {
+                        const recent = clean
+                            .slice()
+                            .sort((a, b) => dateSortKey(a['Date']) - dateSortKey(b['Date']))
+                            .slice(-CACHE_TRIM_ROWS);
+                        put(recent, clean.length);
+                        cacheHealthy = true;
+                        return true;
+                    }
+                } catch (e2) { /* fall through */ }
+                cacheHealthy = false;
+                console.warn('Cache write failed — the next load will be cold.', e);
+                return false;
+            }
+        }
+
+        function relAge(ts) {
+            const s = Math.max(0, Date.now() - ts) / 1000;
+            if (s < 60) return 'just now';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+            return Math.floor(s / 86400) + 'd ago';
+        }
+
         function setUpdatedLabel(prefix, ts) {
             const d = ts ? new Date(ts) : new Date();
             const p = x => x.toString().padStart(2, '0');
-            document.getElementById('lastUpdated').textContent = `${prefix} ${p(d.getHours())}:${p(d.getMinutes())}`;
+            const el = document.getElementById('lastUpdated');
+            const clock = `${p(d.getHours())}:${p(d.getMinutes())}`;
+            // Age matters: HH:MM alone made a 3-day-old cache look current.
+            el.textContent = ts ? `${prefix} ${clock} · ${relAge(ts)}` : `${prefix} ${clock}`;
+            el.title = d.toLocaleString();
         }
         // signature to detect whether live data actually differs from what's shown
         function dataSig(arr) {
@@ -1249,47 +2118,57 @@
             return arr.length + ':' + t;
         }
 
-        // Main entry: paint cached data instantly, fetch live in parallel, swap when ready.
+        // Main entry: paint cached data instantly, consume the already-in-flight
+        // live request, swap when ready.
         async function fetchFromAPI(manual) {
-            hideError();
-            const cache = readCache();
+            manual = (manual === true);   // `load` used to pass an Event here, so every
+            hideError();                  // cold start was treated as a manual refresh
+            const cache = manual ? null : readCache();
             const haveData = allData && allData.length;
 
             // 1) Instant paint from cache (only on first load, before any data is shown)
             if (cache && !haveData) {
                 processData(cache.data, { silent: true });
-                setUpdatedLabel('Cached', cache.ts);
+                setUpdatedLabel(cache.partial ? 'Cached (partial)' : 'Cached', cache.ts);
                 showLiveBadge('syncing'); // subtle "updating…" hint, no blocking overlay
-            } else {
-                // No cache yet, or a manual refresh — show the normal loader
+            } else if (!haveData || manual) {
                 setLoading(true);
             }
 
-            // 2) Fetch live in the background (parallel to the cached render)
+            // 2) Await the live request. On first load it was started at parse
+            //    time, so by now it has had the whole Plotly download to run in.
+            const pending = (livePromise && !manual) ? livePromise : startLiveFetch();
+            livePromise = null;           // consumed; a later refresh starts a new request
+
             try {
-                const res = await fetch(API_URL, { cache: 'no-store' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const json = await res.json();
+                const json = await pending;
                 if (json.status !== 'success' || !Array.isArray(json.data)) throw new Error('Unexpected response format');
 
                 const fresh = json.data;
                 const changed = !haveData || !cache || dataSig(fresh) !== dataSig(allData);
 
-                if (changed) {
-                    processData(fresh);           // reflect live data in charts + table
-                } else {
-                    showLiveBadge('uptodate');    // cache already matched live — no flicker
-                }
-                writeCache(fresh);
-                setUpdatedLabel('Updated');
+                // Cache BEFORE processData, while rows are still free of the __s blob.
+                const stored = writeCache(fresh);
+
+                if (changed) processData(fresh);   // reflect live data in charts + table
+
+                setUpdatedLabel('Updated', Date.now());
+                if (!stored) showLiveBadge('nocache');
+                else if (!changed) showLiveBadge('uptodate');   // matched live — no flicker
+                else showLiveBadge('live');
             } catch (err) {
+                const reason = err && err.name === 'AbortError'
+                    ? `timed out after ${FETCH_TIMEOUT / 1000}s`
+                    : (err && err.message) || 'unknown error';
                 if (allData && allData.length) {
-                    // We already have cached data on screen — keep it, just flag the sync failure
+                    // Cached data is already on screen — keep it, just flag the failure
                     showLiveBadge('offline');
-                    showError('Live sync failed (' + err.message + '). Showing last cached data.');
+                    showError('Live sync failed (' + reason + '). Showing last cached data.');
                 } else {
-                    showError('Could not fetch live data: ' + err.message + '. Showing fallback data.');
+                    showError('Could not fetch live data: ' + reason + '. Showing sample data — the figures below are NOT live.');
                     processData(FALLBACK);
+                    setUpdatedLabel('Sample data', null);
+                    showLiveBadge('fallback');
                 }
             } finally {
                 setLoading(false);
@@ -1301,18 +2180,25 @@
             if (!el) return;
             const map = {
                 syncing: { t: '⟳ Syncing live…', c: '#0ea5e9' },
+                live: { t: '✓ Live', c: '#059669' },
                 uptodate: { t: '✓ Up to date', c: '#059669' },
-                offline: { t: '⚠ Offline (cached)', c: '#d97706' }
+                offline: { t: '⚠ Offline (cached)', c: '#d97706' },
+                nocache: { t: '⚠ Cache unavailable', c: '#d97706' },
+                fallback: { t: '⚠ Sample data', c: '#dc2626' }
             };
             const m = map[state]; if (!m) return;
             el.textContent = m.t; el.style.color = m.c; el.style.display = 'inline-block';
-            if (state === 'uptodate') setTimeout(() => { el.style.display = 'none'; }, 2500);
+            if (state === 'uptodate' || state === 'live') setTimeout(() => { el.style.display = 'none'; }, 2500);
         }
 
         function setLoading(on) {
             document.getElementById('loadingBar').style.display = on ? 'block' : 'none';
-            document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none';
             document.getElementById('refreshBtn').disabled = on;
+            // The full-screen overlay used to hide the entire dashboard on every
+            // cold load. The top bar, the skeletons and the badge say the same
+            // thing without blanking the shell the user is waiting to see.
+            document.getElementById('loadingOverlay').style.display = 'none';
+            if (on) showLiveBadge('syncing');
         }
         function showError(msg) {
             const b = document.getElementById('errorBanner');
@@ -1321,10 +2207,300 @@
         }
         function hideError() { document.getElementById('errorBanner').style.display = 'none'; }
 
+        // ─── Data quality ───
+        // Every row coming back from the sheet is checked. Anything that cannot
+        // be trusted is collected here rather than silently rendered as a wrong
+        // number, and surfaced through the ⚠ button in the header.
+        const NUM_FIELDS = ['Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
+        const REQUIRED_FIELDS = [
+            ['Date', 'Date'], ['Packer Name', 'Packer'], ['Category', 'Category'],
+            ['Size', 'Size'], ['Style No.', 'Style No.'], ['Lot No.', 'Lot No.']
+        ];
+        const ISSUE_KINDS = {
+            date: { label: 'Date problems', icon: '📅', hint: 'The date cannot be read, so the row is missing from every chart.' },
+            month: { label: 'Month mismatch', icon: '🗓', hint: 'The Month column disagrees with the actual date.' },
+            total: { label: "Totals don't add up", icon: '🧮', hint: 'Total ≠ Fresh + Alter + Mix, so KPI figures are affected.' },
+            number: { label: 'Bad numbers', icon: '#️⃣', hint: 'A quantity cell is not a valid number and counts as 0.' },
+            missing: { label: 'Missing values', icon: '∅', hint: 'A required cell is blank, so the row drops out of that filter.' },
+            format: { label: 'Inconsistent spelling', icon: '🔤', hint: 'The same value is typed more than one way, so it is counted as two different things.' }
+        };
+
+        let dataIssues = [];
+        let issueRowSet = new Set();
+
+        // Position in the API response. The sheet's own row number is that plus
+        // one when the sheet has a single header row and no gaps — shown as an
+        // estimate, with the row's own values given so it can be identified.
+        function sheetRowGuess(rec) { return rec + 1; }
+
+        function isBlank(v) { return v === null || v === undefined || String(v).trim() === ''; }
+
+        function validateData(rows) {
+            const issues = [];
+            const horizon = Date.now() + 365 * 86400000;
+
+            rows.forEach((row, i) => {
+                const rec = i + 1;
+                const push = (kind, field, message, value) =>
+                    issues.push({ kind, field, message, value, rec, row });
+
+                const pd = rowDate(row);
+                if (!pd.ok) {
+                    if (!isBlank(row['Date'])) push('date', 'Date', pd.reason, row['Date']);
+                } else if (pd.key > horizon) {
+                    push('date', 'Date', 'date is more than a year in the future', row['Date']);
+                }
+
+                // Month column vs the month the date actually falls in
+                const mCol = String(row['Month'] || '').trim();
+                if (pd.ok && mCol) {
+                    const said = mCol.toLowerCase().slice(0, 3);
+                    const actual = pd.monthName.toLowerCase().slice(0, 3);
+                    if (said !== actual)
+                        push('month', 'Month', `says "${mCol}" but ${pd.display} falls in ${pd.monthName}`, mCol);
+                }
+
+                // Quantity cells must be numeric and non-negative
+                for (const f of NUM_FIELDS) {
+                    const raw = row[f];
+                    if (isBlank(raw)) continue;                 // blank counts as zero
+                    if (typeof raw === 'number') {
+                        if (!isFinite(raw)) push('number', f, 'not a finite number', raw);
+                        else if (raw < 0) push('number', f, `negative value (${raw})`, raw);
+                        continue;
+                    }
+                    const s = String(raw).trim().replace(/,/g, '');
+                    if (!/^-?\d+(\.\d+)?$/.test(s)) push('number', f, `"${raw}" is not a number — counted as 0`, raw);
+                    else if (Number(s) < 0) push('number', f, `negative value (${raw})`, raw);
+                }
+
+                // Totals must reconcile
+                const fr = n(row['Fresh PCS.']), al = n(row['Alter PCS.']),
+                    mx = n(row['Mix PCS.']), tot = n(row['Total PCS.']);
+                if ((fr || al || mx || tot) && fr + al + mx !== tot)
+                    push('total', 'Total PCS.',
+                        `Total ${fmt(tot)} but Fresh ${fmt(fr)} + Alter ${fmt(al)} + Mix ${fmt(mx)} = ${fmt(fr + al + mx)}`, tot);
+
+                // Required cells
+                for (const pair of REQUIRED_FIELDS)
+                    if (isBlank(row[pair[0]])) push('missing', pair[0], `${pair[1]} is blank`, row[pair[0]]);
+            });
+
+            // One size written two ways ("28*32" and "28 & 32") splits the Size
+            // filter and double-counts in the size chart. Reported once per size,
+            // not once per row, so the list stays readable.
+            const spell = {};
+            rows.forEach((row, i) => {
+                const c = canonSize(row['Size']);
+                if (!c) return;
+                const s = String(row['Size']).trim();
+                if (!spell[c]) spell[c] = {};
+                if (!spell[c][s]) spell[c][s] = { pcs: 0, rows: 0, first: i + 1, row: row };
+                spell[c][s].pcs += n(row['Total PCS.']);
+                spell[c][s].rows++;
+            });
+            Object.keys(spell).forEach(c => {
+                const variants = Object.keys(spell[c]);
+                if (variants.length < 2) return;
+                variants.sort((a, b) => spell[c][b].pcs - spell[c][a].pcs);
+                const odd = variants.slice(1);                 // keep the most-used spelling
+                const detail = variants.map(v => `"${v}" (${fmt(spell[c][v].pcs)} pcs)`).join(' and ');
+                issues.push({
+                    kind: 'format', field: 'Size',
+                    message: `same size written ${variants.length} ways — ${detail}. Counted separately; use one spelling.`,
+                    value: odd.join(', '), rec: spell[c][odd[0]].first, row: spell[c][odd[0]].row
+                });
+            });
+            return issues;
+        }
+
+        // "28*32", "28 X 32", "28 & 32" → "28X32". Returns null for anything that
+        // is not a plain WIDTH<sep>LENGTH pair, so free-text sizes are left alone.
+        function canonSize(v) {
+            if (isBlank(v)) return null;
+            const m = String(v).trim().toUpperCase().match(/^(\d+)\s*[*x&\/-]\s*(\d+)$/);
+            return m ? m[1] + 'X' + m[2] : null;
+        }
+
+        function runValidation(rows) {
+            dataIssues = validateData(rows);
+            issueRowSet = new Set(dataIssues.map(i => i.row));
+            renderIssueBadge();
+        }
+
+        function renderIssueBadge() {
+            const btn = document.getElementById('dqBtn');
+            const cnt = document.getElementById('dqCount');
+            const wrap = document.getElementById('onlyIssuesWrap');
+            if (!btn) return;
+            const total = dataIssues.length;
+            if (wrap) wrap.hidden = !total;
+            if (!total) {
+                btn.hidden = true;
+                if (showOnlyIssues) { showOnlyIssues = false; }
+                if (dqOpen) closeIssues();
+                return;
+            }
+            btn.hidden = false;
+            cnt.textContent = total > 999 ? '999+' : String(total);
+            const rows = issueRowSet.size;
+            btn.title = `${total} data issue${total > 1 ? 's' : ''} across ${rows} row${rows > 1 ? 's' : ''} — click for details`;
+            btn.setAttribute('aria-label', btn.title);
+        }
+
+        // ─── Issue details panel ───
+        let dqOpen = false;
+        let dqKind = 'all';
+        const DQ_MAX = 300;   // rows listed at once; the CSV carries everything
+
+        function toggleIssues() { dqOpen ? closeIssues() : openIssues(); }
+
+        function openIssues() {
+            if (!dataIssues.length) return;
+            dqOpen = true;
+            const p = document.getElementById('dqPanel');
+            p.hidden = false;
+            document.body.style.overflow = 'hidden';
+            renderIssues();
+            const c = document.getElementById('dqClose');
+            if (c) c.focus();
+        }
+
+        function closeIssues() {
+            dqOpen = false;
+            const p = document.getElementById('dqPanel');
+            if (p) p.hidden = true;
+            document.body.style.overflow = '';
+            const b = document.getElementById('dqBtn');
+            if (b && !b.hidden) b.focus();
+        }
+
+        function setIssueKind(k) { dqKind = k; renderIssues(); }
+
+        function issueContext(row) {
+            const pd = rowDate(row);
+            const bits = [
+                pd.ok ? pd.display : 'Date: ' + (isBlank(row['Date']) ? '(blank)' : String(row['Date'])),
+                row['Packer Name'] || '(no packer)',
+                row['Style No.'] !== '' && row['Style No.'] != null ? 'Style ' + row['Style No.'] : '(no style)',
+                row['Lot No.'] !== '' && row['Lot No.'] != null ? 'Lot ' + row['Lot No.'] : '(no lot)'
+            ];
+            return bits.join(' · ');
+        }
+
+        function renderIssues() {
+            const counts = { all: dataIssues.length };
+            for (const k in ISSUE_KINDS) counts[k] = 0;
+            dataIssues.forEach(i => { counts[i.kind] = (counts[i.kind] || 0) + 1; });
+
+            document.getElementById('dqSub').textContent =
+                `${fmt(dataIssues.length)} issue${dataIssues.length > 1 ? 's' : ''} in ${fmt(issueRowSet.size)} of ${fmt(allData.length)} rows`;
+
+            // filter chips
+            const chips = [['all', 'All', '⬤']].concat(
+                Object.keys(ISSUE_KINDS).filter(k => counts[k]).map(k => [k, ISSUE_KINDS[k].label, ISSUE_KINDS[k].icon]));
+            document.getElementById('dqTabs').innerHTML = chips.map(c =>
+                `<button class="dq-chip${dqKind === c[0] ? ' on' : ''}" onclick="setIssueKind('${c[0]}')">` +
+                `${c[2]} ${escHtml(c[1])} <b>${fmt(counts[c[0]] || 0)}</b></button>`).join('');
+
+            const list = dqKind === 'all' ? dataIssues : dataIssues.filter(i => i.kind === dqKind);
+            const view = list.slice(0, DQ_MAX);
+
+            const hint = dqKind !== 'all' && ISSUE_KINDS[dqKind]
+                ? `<div class="dq-hint">${escHtml(ISSUE_KINDS[dqKind].hint)}</div>` : '';
+
+            document.getElementById('dqList').innerHTML = hint + (view.length ? view.map(is => {
+                const k = ISSUE_KINDS[is.kind] || { icon: '•', label: is.kind };
+                const idx = dataIssues.indexOf(is);
+                return `<div class="dq-item">
+    <div class="dq-item-icon" title="${escHtml(k.label)}">${k.icon}</div>
+    <div class="dq-item-body">
+      <div class="dq-item-top">
+        <span class="dq-rec">Record #${fmt(is.rec)}</span>
+        <span class="dq-sheet" title="Assumes one header row and no blank rows in the sheet">sheet row ≈ ${fmt(sheetRowGuess(is.rec))}</span>
+        <span class="dq-field">${escHtml(is.field)}</span>
+      </div>
+      <div class="dq-msg">${escHtml(is.message)}</div>
+      <div class="dq-ctx">${escHtml(issueContext(is.row))}</div>
+    </div>
+    <button class="dq-jump" onclick="showIssueInTable(${idx})" title="Show this row in the table below">View row</button>
+  </div>`;
+            }).join('') : '<div class="dq-empty">No issues of this type.</div>');
+
+            document.getElementById('dqFootNote').textContent = list.length > DQ_MAX
+                ? `Showing first ${fmt(DQ_MAX)} of ${fmt(list.length)} — export for the full list`
+                : `${fmt(list.length)} shown`;
+        }
+
+        // Clear the filters, show only rows that have issues, and scroll to the
+        // offending row so it can be found in the sheet and fixed.
+        function showIssueInTable(idx) {
+            const is = dataIssues[idx];
+            if (!is) return;
+            closeIssues();
+            clearFilters({ silent: true });
+            document.getElementById('tableSearch').value = '';
+            tableSearchQuery = '';
+            showOnlyIssues = true;
+            const t = document.getElementById('onlyIssues');
+            if (t) t.checked = true;
+            applyFilters();
+
+            const target = document.querySelector(`#tableBody tr[data-i="${is.row.__i}"]`);
+            const wrap = document.querySelector('.table-wrap');
+            if (target && wrap) {
+                document.querySelector('.table-head-row').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                wrap.scrollTop = Math.max(0, target.offsetTop - wrap.clientHeight / 3);
+                target.classList.remove('row-flash');
+                void target.offsetWidth;
+                target.classList.add('row-flash');
+            } else {
+                showError('That row is outside the first ' + fmt(TABLE_MAX) + ' listed rows — use the CSV export to locate it.');
+            }
+        }
+
+        function exportIssuesCSV() {
+            const cols = ['Record #', 'Sheet row (approx)', 'Issue type', 'Field', 'Problem',
+                'Date', 'Month', 'Category', 'Packer Name', 'Style No.', 'Lot No.', 'Size',
+                'Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
+            const esc = v => {
+                const s = String(v ?? '');
+                return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+            };
+            const body = dataIssues.map(is => [
+                is.rec, sheetRowGuess(is.rec), (ISSUE_KINDS[is.kind] || {}).label || is.kind, is.field, is.message,
+                is.row['Date'], is.row['Month'], is.row['Category'], is.row['Packer Name'],
+                is.row['Style No.'], is.row['Lot No.'], is.row['Size'],
+                is.row['Fresh PCS.'], is.row['Alter PCS.'], is.row['Mix PCS.'], is.row['Total PCS.']
+            ].map(esc).join(',')).join('\n');
+            downloadBlob('﻿' + cols.join(',') + '\n' + body, `packing_data_issues_${stamp()}.csv`, 'text/csv;charset=utf-8;');
+        }
+
         // ─── Filters ───
+        // The header used to hard-code "April – May 2026". Derive it, so it can
+        // never drift out of date as the sheet grows.
+        function setHeaderRange(data) {
+            const el = document.getElementById('headerRange');
+            if (!el) return;
+            let lo = null, hi = null;
+            for (let i = 0; i < data.length; i++) {
+                const pd = rowDate(data[i]);
+                if (!pd.ok) continue;
+                if (lo === null || pd.key < lo.key) lo = pd;
+                if (hi === null || pd.key > hi.key) hi = pd;
+            }
+            if (!lo) { el.textContent = 'Real-time production overview'; return; }
+            const label = p => p.monthName.slice(0, 3) + ' ' + p.y;
+            el.textContent = 'Real-time · ' +
+                (label(lo) === label(hi) ? label(lo) : label(lo) + ' – ' + label(hi));
+        }
+
         function processData(data, opts) {
             opts = opts || {};
             allData = data;
+            for (let i = 0; i < data.length; i++) data[i].__i = i;   // stable row id for "View row"
+            runValidation(data);
+            setHeaderRange(data);
             buildSearchIndex(data);
             populateFilters(data);
             if (opts.silent) document.getElementById('loadingOverlay').style.display = 'none';
@@ -1335,17 +2511,32 @@
         const SEARCH_FIELDS = ['Month', 'Category', 'Packer Name', 'Style No.', 'Lot No.', 'Size', 'Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
         function buildSearchIndex(data) {
             for (const d of data) {
-                d.__s = (normaliseDate(d['Date']) + ' ' +
+                d.__s = ((rowDate(d).display || '') + ' ' +
                     SEARCH_FIELDS.map(f => d[f] ?? '').join(' ')).toLowerCase();
             }
         }
 
+        // Numeric-aware compare, so sizes read 8X10, 26X30, 28X32 … instead of
+        // 26X30, 28X32, 8X10 under a plain string sort.
+        const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        function uniq(vals) { return [...new Set(vals.filter(v => !isBlank(v)).map(v => String(v)))]; }
+
+        function monthIndex(name) {
+            const s = String(name).trim().toLowerCase().slice(0, 3);
+            const i = MONTH_NAMES.findIndex(m => m.toLowerCase().slice(0, 3) === s);
+            return i < 0 ? 99 : i;
+        }
+
         function populateFilters(data) {
-            const cats = [...new Set(data.map(d => d['Category']).filter(Boolean))].sort();
-            const packers = [...new Set(data.map(d => d['Packer Name']).filter(Boolean))].sort();
-            const months = [...new Set(data.map(d => d['Month']).filter(Boolean))].sort();
-            const years = [...new Set(data.map(d => getYearFromDate(d['Date'])).filter(Boolean))].sort();
-            const sizes = [...new Set(data.map(d => d['Size']).filter(Boolean))].sort();
+            const cats = uniq(data.map(d => d['Category'])).sort(COLLATOR.compare);
+            const packers = uniq(data.map(d => d['Packer Name'])).sort(COLLATOR.compare);
+            // Calendar order, not alphabetical — a plain .sort() listed these as
+            // April, August, December, February, January…
+            const months = uniq(data.map(d => d['Month']))
+                .sort((a, b) => monthIndex(a) - monthIndex(b) || COLLATOR.compare(a, b));
+            const years = uniq(data.map(d => { const p = rowDate(d); return p.ok ? String(p.y) : ''; }))
+                .sort(COLLATOR.compare);
+            const sizes = uniq(data.map(d => d['Size'])).sort(COLLATOR.compare);
             fill('fCat', cats, 'All Categories');
             fill('fPacker', packers, 'All Packers');
             fill('fMonth', months, 'All Months');
@@ -1356,9 +2547,20 @@
             const s = document.getElementById(id);
             if (!s) return;
             const cur = s.value;
-            s.innerHTML = `<option value="">${ph}</option>` + opts.map(o => `<option value="${o}">${o}</option>`).join('');
-            if (opts.includes(cur)) s.value = cur;
+            // Values come from the sheet — escape them, or a stray quote silently
+            // truncates the <option> and breaks that filter.
+            s.innerHTML = `<option value="">${escHtml(ph)}</option>` +
+                opts.map(o => `<option value="${escHtml(o)}">${escHtml(o)}</option>`).join('');
+            s.value = opts.includes(cur) ? cur : '';
         }
+        let showOnlyIssues = false;
+        const FILTER_DEFS = [
+            ['fCat', 'Category'], ['fPacker', 'Packer'], ['fMonth', 'Month'],
+            ['fYear', 'Year'], ['fSize', 'Size'], ['sStyle', 'Style/Size'], ['sLot', 'Lot']
+        ];
+
+        function toggleOnlyIssues(on) { showOnlyIssues = !!on; applyFilters(); }
+
         function applyFilters() {
             const cat = document.getElementById('fCat').value;
             const packer = document.getElementById('fPacker').value;
@@ -1368,32 +2570,73 @@
             const styleQuery = document.getElementById('sStyle').value.trim().toLowerCase();
             const lotQuery = document.getElementById('sLot').value.trim().toLowerCase();
 
+            // Every clause is AND-ed, and an empty control means "no constraint",
+            // so any combination of filters narrows correctly.
             filteredData = allData.filter(d => {
-                const dYear = getYearFromDate(d['Date']);
-                const dStyle = String(d['Style No.'] || '').toLowerCase();
-                const dLot = String(d['Lot No.'] || '').toLowerCase();
-                const dSize = String(d['Size'] || '').toLowerCase();
+                if (showOnlyIssues && !issueRowSet.has(d)) return false;
+                const pd = rowDate(d);
+                // Compare as strings. Sheet cells arrive as numbers or text
+                // interchangeably, and a numeric Size (e.g. 30) used to fail the
+                // strict === against the dropdown's string value and match nothing.
+                const dStyle = String(d['Style No.'] ?? '').toLowerCase();
+                const dLot = String(d['Lot No.'] ?? '').toLowerCase();
+                const dSize = String(d['Size'] ?? '').toLowerCase();
 
-                return (!cat || d['Category'] === cat) &&
-                    (!packer || d['Packer Name'] === packer) &&
-                    (!month || d['Month'] === month) &&
-                    (!year || dYear === year) &&
-                    (!size || d['Size'] === size) &&
+                return (!cat || String(d['Category'] ?? '') === cat) &&
+                    (!packer || String(d['Packer Name'] ?? '') === packer) &&
+                    (!month || String(d['Month'] ?? '') === month) &&
+                    (!year || (pd.ok && String(pd.y) === year)) &&
+                    (!size || String(d['Size'] ?? '') === size) &&
                     (!styleQuery || dStyle.includes(styleQuery) || dSize.includes(styleQuery)) &&
                     (!lotQuery || dLot.includes(lotQuery));
             });
+            renderFilterChips();
             renderAll();
         }
-        function clearFilters() {
-            ['fCat', 'fPacker', 'fMonth', 'fYear', 'fSize'].forEach(id => {
+
+        // Shows exactly which constraints are in force, so a surprising number
+        // on screen can always be traced back to the filters producing it.
+        function renderFilterChips() {
+            const box = document.getElementById('activeFilters');
+            if (!box) return;
+            const active = [];
+            FILTER_DEFS.forEach(pair => {
+                const el = document.getElementById(pair[0]);
+                const v = el ? String(el.value).trim() : '';
+                if (v) active.push({ id: pair[0], label: pair[1], v: v });
+            });
+            if (showOnlyIssues) active.push({ id: '__issues', label: 'Showing', v: 'rows with issues' });
+
+            if (!active.length) { box.hidden = true; box.innerHTML = ''; return; }
+            box.hidden = false;
+            box.innerHTML = '<span class="af-lead">Filtered by</span>' + active.map(a =>
+                `<button class="af-chip" onclick="removeFilter('${a.id}')" title="Remove this filter">` +
+                `<span class="af-key">${escHtml(a.label)}</span><span class="af-val">${escHtml(a.v)}</span>` +
+                `<span class="af-x">✕</span></button>`).join('') +
+                '<button class="af-clear" onclick="clearFilters()">Clear all</button>';
+        }
+
+        function removeFilter(id) {
+            if (id === '__issues') {
+                showOnlyIssues = false;
+                const t = document.getElementById('onlyIssues');
+                if (t) t.checked = false;
+            } else {
                 const el = document.getElementById(id);
                 if (el) el.value = '';
-            });
-            ['sStyle', 'sLot'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = '';
-            });
+            }
             applyFilters();
+        }
+
+        function clearFilters(opts) {
+            ['fCat', 'fPacker', 'fMonth', 'fYear', 'fSize', 'sStyle', 'sLot'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            showOnlyIssues = false;
+            const t = document.getElementById('onlyIssues');
+            if (t) t.checked = false;
+            if (!(opts && opts.silent)) applyFilters();
         }
 
         // ─── Render ───
@@ -1420,6 +2663,19 @@
             document.getElementById('kMixSub').textContent = mix ? `${((mix / total) * 100).toFixed(1)}% of total` : 'no mix pieces';
 
             animateKPIs();
+            renderInsights(data);
+            renderTable(data);
+
+            // Charts need Plotly, which is deferred. Everything above paints
+            // without it; the charts fill in from markPlotlyReady() once it lands.
+            if (plotlyReady) renderCharts(data);
+            else if (plotlyFailed) showChartMessage('Charts unavailable — the chart library could not be loaded.');
+            else showChartSkeletons();
+
+            animateCards();
+        }
+
+        function renderCharts(data) {
             renderTrend(data);
             renderCatDonut(data);
             renderPackerBar(data);
@@ -1428,23 +2684,44 @@
             renderScatter(data);
             renderMonthBar(data);
             renderAlterCatDonut(data);
-            renderInsights(data);
             renderForecast(data);
-            renderTable(data);
-            animateCards();
         }
 
-        function animateKPIs() {
-            document.querySelectorAll('.kpi-card').forEach((c, i) => {
-                c.style.animation = 'none'; c.offsetHeight;
-                c.style.animation = `fadeUp .45s ease ${i * 0.07}s forwards`;
+        // Reveal via a class that is dropped on animationend. The old inline
+        // `animation: … forwards` held transform:translateY(0) at animation
+        // priority for good, which outranks normal author rules and silently
+        // disabled the :hover lift on every card on the page.
+        function revealCards(nodes, step, dur) {
+            // Cards are visible by default; the animation is only ever an
+            // enhancement. Skip it when it cannot run — in a hidden tab the
+            // animation is created but never advances, which would pin the card
+            // at opacity 0 (the very "invisible until JS" bug being fixed here).
+            const skip = REDUCED_MOTION || document.hidden;
+            nodes.forEach((c, i) => {
+                const done = () => {
+                    c.classList.remove('anim-in');     // hand transform back to :hover
+                    c.style.animationDelay = '';
+                    c.style.animationDuration = '';
+                    clearTimeout(c.__revealTimer);
+                };
+                done();
+                if (skip) return;
+                void c.offsetWidth;                    // restart the animation
+                c.style.animationDelay = (i * step) + 's';
+                c.style.animationDuration = dur + 's';
+                c.classList.add('anim-in');
+                c.addEventListener('animationend', done, { once: true });
+                c.addEventListener('animationcancel', done, { once: true });
+                // Fail-safe: never leave a card stuck invisible if the animation
+                // is throttled, cancelled or its end event is missed.
+                c.__revealTimer = setTimeout(done, (i * step + dur) * 1000 + 500);
             });
         }
+        function animateKPIs() {
+            revealCards(document.querySelectorAll('.kpi-card'), 0.07, 0.45);
+        }
         function animateCards() {
-            document.querySelectorAll('.chart-card,.insight-card').forEach((c, i) => {
-                c.style.animation = 'none'; c.offsetHeight;
-                c.style.animation = `fadeUp .5s ease ${i * 0.05}s forwards`;
-            });
+            revealCards(document.querySelectorAll('.chart-card,.insight-card'), 0.05, 0.5);
         }
 
         // ─── Plotly base config ───
@@ -1460,28 +2737,120 @@
         };
         const CFG = { displayModeBar: false, responsive: true };
 
+        // Chart has nothing to draw — say so instead of leaving a blank panel.
+        function emptyChart(id, msg) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            try { Plotly.purge(id); } catch (e) { }
+            el.innerHTML = '<div class="chart-msg">' + escHtml(msg) + '</div>';
+        }
+
+        // ─── Daily trend: one month at a time ───
+        // '' means "follow the default rule"; otherwise a 'YYYY-MM' key the user
+        // picked. Kept even when a global filter temporarily hides that month, so
+        // widening the filters again restores their choice.
+        let trendMonthChoice = '';
+
+        function monthKeyOf(pd) { return pd.y + '-' + pad2(pd.mIdx + 1); }
+        function monthKeyLabel(key) {
+            return MONTH_NAMES[+key.slice(5, 7) - 1] + ' ' + key.slice(0, 4);
+        }
+        function onTrendMonthChange(v) {
+            trendMonthChoice = v || '';
+            renderTrend(filteredData);
+        }
+
         function renderTrend(data) {
-            const byDate = {};
+            // Bucket by month, then by day-of-month within each
+            const months = {};
             for (let i = 0; i < data.length; i++) {
                 const d = data[i];
-                const k = normaliseDate(d['Date']);
+                const pd = rowDate(d);
                 const cat = d['Category'];
-                if (!k || !cat) continue;
-                if (!byDate[k]) byDate[k] = { Ladies: 0, Mens: 0 };
-                byDate[k][cat] = (byDate[k][cat] || 0) + n(d['Total PCS.']);
+                if (!pd.ok || !cat) continue;
+                const mk = monthKeyOf(pd);
+                if (!months[mk]) months[mk] = {};
+                if (!months[mk][pd.day]) months[mk][pd.day] = { Ladies: 0, Mens: 0 };
+                months[mk][pd.day][cat] = (months[mk][pd.day][cat] || 0) + n(d['Total PCS.']);
             }
-            const dates = Object.keys(byDate).sort((a, b) => dateSortKey(a) - dateSortKey(b));
-            const labels = dates.map(d => d.slice(0, 5));
+            const keys = Object.keys(months).sort();          // 'YYYY-MM' sorts chronologically
+            const sel = document.getElementById('fTrendMonth');
+            const sub = document.getElementById('trendSub');
+            const box = document.getElementById('trendChart');
+
+            if (!keys.length) {
+                if (sel) sel.innerHTML = '<option value="">No months</option>';
+                if (sub) sub.textContent = 'Nothing to plot in the current filter';
+                Plotly.purge('trendChart');
+                box.innerHTML = '<div class="chart-msg">No rows with a readable date match the current filters.</div>';
+                return;
+            }
+
+            // Default to the current month, but only when it actually has rows —
+            // otherwise the chart would open empty. Falls back to the most recent
+            // month that has data.
+            const now = new Date();
+            const thisMonth = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+            const active = (trendMonthChoice && keys.indexOf(trendMonthChoice) >= 0)
+                ? trendMonthChoice
+                : (keys.indexOf(thisMonth) >= 0 ? thisMonth : keys[keys.length - 1]);
+
+            if (sel) {
+                sel.innerHTML = keys.map(k =>
+                    `<option value="${escHtml(k)}">${escHtml(monthKeyLabel(k))}</option>`).join('');
+                sel.value = active;
+            }
+
+            const byDay = months[active];
+            const yr = +active.slice(0, 4), mo = +active.slice(5, 7) - 1;
+            const monthLast = new Date(Date.UTC(yr, mo + 1, 0)).getUTCDate();
+            const maxWithData = Math.max.apply(null, Object.keys(byDay).map(Number));
+            // Every calendar day, so days with no packing read as real gaps. For
+            // the running month stop at today rather than drawing future zeros —
+            // but never cut off a row that is actually there.
+            const lastDay = (active === thisMonth)
+                ? Math.min(monthLast, Math.max(now.getDate(), maxWithData))
+                : monthLast;
+
+            const labels = [], ladies = [], mens = [], full = [];
+            for (let day = 1; day <= lastDay; day++) {
+                const v = byDay[day] || { Ladies: 0, Mens: 0 };
+                labels.push(pad2(day));
+                ladies.push(v.Ladies || 0);
+                mens.push(v.Mens || 0);
+                full.push(pad2(day) + ' ' + monthKeyLabel(active));
+            }
+
+            const activeDays = Object.keys(byDay).length;
+            const tot = ladies.reduce((a, b) => a + b, 0) + mens.reduce((a, b) => a + b, 0);
+            if (sub) sub.textContent =
+                `${monthKeyLabel(active)} · ${fmt(tot)} pieces over ${activeDays} active day${activeDays === 1 ? '' : 's'}`;
+
+            // Point labels only while they can be read — past ~16 days they
+            // collide and the chart turns into noise, so hover takes over.
+            const showPointLabels = labels.length <= 16;
+            const trace = (name, y, color, fillc) => ({
+                x: labels, y: y, name: name,
+                type: 'scatter', mode: showPointLabels ? 'lines+markers+text' : 'lines+markers',
+                line: { color: color, width: 2, shape: 'spline' },
+                fill: 'tozeroy', fillcolor: fillc,
+                marker: { size: 4, color: color },
+                text: showPointLabels ? y.map(v => v ? fmtK(v) : '') : null,
+                textposition: 'top center',
+                textfont: { size: 8, family: 'Poppins', color: color },
+                cliponaxis: false,
+                customdata: full,
+                hovertemplate: '%{customdata}<br><b>%{y:,}</b> pcs<extra>' + name + '</extra>'
+            });
+
             Plotly.newPlot('trendChart', [
-                {
-                    x: labels, y: dates.map(d => byDate[d].Ladies || 0), name: 'Ladies', type: 'scatter', mode: 'lines+markers',
-                    line: { color: '#e11d48', width: 2, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(225,29,72,0.07)', marker: { size: 4, color: '#e11d48' }
-                },
-                {
-                    x: labels, y: dates.map(d => byDate[d].Mens || 0), name: 'Mens', type: 'scatter', mode: 'lines+markers',
-                    line: { color: '#2563eb', width: 2, shape: 'spline' }, fill: 'tozeroy', fillcolor: 'rgba(37,99,235,0.07)', marker: { size: 4, color: '#2563eb' }
-                }
-            ], { ...PLY, margin: { t: 6, r: 8, b: 48, l: 44 } }, CFG);
+                trace('Ladies', ladies, '#e11d48', 'rgba(225,29,72,0.07)'),
+                trace('Mens', mens, '#2563eb', 'rgba(37,99,235,0.07)')
+            ], {
+                ...PLY,
+                margin: { t: showPointLabels ? 18 : 6, r: 8, b: 34, l: 44 },
+                xaxis: { ...PLY.xaxis, type: 'category', automargin: true, title: { text: '' } }
+            }, CFG);
         }
 
         // ─── Predictive Analysis ───
@@ -1527,22 +2896,22 @@
             }
 
             // x = day index from the first active day; y = pieces that day
-            const t0 = dateSortKey(days[0]).getTime();
+            const t0 = dateSortKey(days[0]);          // ms since epoch
             const DAY = 86400000;
-            const xs = days.map(d => Math.round((dateSortKey(d).getTime() - t0) / DAY));
+            const xs = days.map(d => Math.round((dateSortKey(d) - t0) / DAY));
             const ys = days.map(d => byDay[d]);
             const fit = linReg(xs, ys);
 
             const lastX = xs[xs.length - 1];
             const HORIZON = 30;
             const futureX = [], futureLabels = [], futureY = [], bandHi = [], bandLo = [];
-            const lastDate = dateSortKey(days[days.length - 1]);
+            const lastDate = dateSortKey(days[days.length - 1]);   // ms
             // 95% band ≈ ±1.96·stdErr
             const band = fit ? 1.96 * fit.stdErr : 0;
             for (let i = 1; i <= HORIZON; i++) {
                 const x = lastX + i;
                 futureX.push(x);
-                const dt = new Date(lastDate.getTime() + i * DAY);
+                const dt = new Date(lastDate + i * DAY);
                 futureLabels.push(String(dt.getDate()).padStart(2, '0') + '/' + String(dt.getMonth() + 1).padStart(2, '0'));
                 const pred = fit ? Math.max(0, fit.slope * x + fit.intercept) : 0;
                 futureY.push(Math.round(pred));
@@ -1649,32 +3018,66 @@
             }], { ...PLY, showlegend: false, margin: { t: 10, r: 10, b: 10, l: 10 } }, CFG);
         }
 
+        // Horizontal STACKED bars. Grouped vertical bars were unreadable here:
+        // Alter and Mix are well under 1% of Fresh, so their bars rendered as a
+        // flat line against a ~4,000-piece Fresh bar. Stacking makes the bar
+        // length the packer's true total, the total is labelled, and the exact
+        // Fresh/Alter/Mix split (with shares) is in the hover.
         function renderPackerBar(data) {
-            const packerData = {};
+            const agg = {};
             for (let i = 0; i < data.length; i++) {
                 const d = data[i];
                 const p = d['Packer Name'];
                 if (!p) continue;
-                if (!packerData[p]) {
-                    packerData[p] = { fresh: 0, alter: 0, mix: 0 };
-                }
-                packerData[p].fresh += n(d['Fresh PCS.']);
-                packerData[p].alter += n(d['Alter PCS.']);
-                packerData[p].mix += n(d['Mix PCS.']);
+                if (!agg[p]) agg[p] = { fresh: 0, alter: 0, mix: 0, tot: 0 };
+                agg[p].fresh += n(d['Fresh PCS.']);
+                agg[p].alter += n(d['Alter PCS.']);
+                agg[p].mix += n(d['Mix PCS.']);
+                agg[p].tot += n(d['Total PCS.']);
             }
-            const packers = Object.keys(packerData).sort();
-            const fresh = packers.map(p => packerData[p].fresh);
-            const alter = packers.map(p => packerData[p].alter);
-            const mix = packers.map(p => packerData[p].mix);
-            const maxVal = Math.max(0, ...fresh, ...alter, ...mix);
+            // ascending, so the biggest packer lands at the top of the chart
+            const packers = Object.keys(agg).sort((a, b) => agg[a].tot - agg[b].tot);
+            const sub = document.getElementById('packerSub');
+
+            if (!packers.length) {
+                if (sub) sub.textContent = 'No packer data in the current filter';
+                return emptyChart('packerBar', 'No packer data in the current filter.');
+            }
+
+            const grand = packers.reduce((s, p) => s + agg[p].tot, 0);
+            if (sub) sub.textContent =
+                `Fresh, Alter & Mix per packer — ${packers.length} packer${packers.length === 1 ? '' : 's'}, ${fmt(grand)} pieces`;
+
+            const pct = (v, t) => t ? (v / t * 100).toFixed(1) + '%' : '0%';
+            const series = (name, key, color) => ({
+                y: packers, x: packers.map(p => agg[p][key]),
+                name: name, type: 'bar', orientation: 'h',
+                marker: { color: color },
+                // No per-segment labels: an inside "342k" (Fresh) sitting next to
+                // the "347,078" total at the bar end reads as a contradiction.
+                // The bar's own figure is the total, annotated below; the
+                // Fresh/Alter/Mix split with shares is in the hover.
+                textposition: 'none',
+                customdata: packers.map(p => pct(agg[p][key], agg[p].tot)),
+                hovertemplate: '<b>%{y}</b><br>' + name + ': %{x:,.0f} pcs (%{customdata})<extra></extra>'
+            });
+            const maxTot = Math.max.apply(null, packers.map(p => agg[p].tot));
+
             Plotly.newPlot('packerBar', [
-                { x: packers, y: fresh, name: 'Fresh', type: 'bar', marker: { color: '#059669' }, hovertemplate: '%{x}<br>Fresh: %{y:,.0f}<extra></extra>' },
-                { x: packers, y: alter, name: 'Alter', type: 'bar', marker: { color: '#d97706' }, hovertemplate: '%{x}<br>Alter: %{y:,.0f}<extra></extra>' },
-                { x: packers, y: mix, name: 'Mix', type: 'bar', marker: { color: '#7c3aed' }, hovertemplate: '%{x}<br>Mix: %{y:,.0f}<extra></extra>' }
+                series('Fresh', 'fresh', '#059669'),
+                series('Alter', 'alter', '#d97706'),
+                series('Mix', 'mix', '#7c3aed')
             ], {
-                ...PLY, barmode: 'group', xaxis: { ...PLY.xaxis, gridcolor: 'transparent' },
-                yaxis: { ...PLY.yaxis, range: [0, (maxVal || 1) * 1.22] },
-                margin: { t: 6, r: 8, b: 48, l: 44 }
+                ...PLY, barmode: 'stack', bargap: 0.4,
+                legend: { ...PLY.legend, traceorder: 'normal' },   // Fresh→Alter→Mix, matching the stack
+                margin: { t: 6, r: 58, b: 40, l: 80 },
+                xaxis: { ...PLY.xaxis, range: [0, (maxTot || 1) * 1.16] },
+                yaxis: { ...PLY.yaxis, type: 'category', gridcolor: 'transparent', automargin: true },
+                annotations: packers.map(p => ({
+                    x: agg[p].tot, y: p, text: fmt(agg[p].tot),
+                    xanchor: 'left', yanchor: 'middle', xshift: 6, showarrow: false,
+                    font: { size: 9, family: 'Poppins', color: '#475569' }
+                }))
             }, CFG);
         }
 
@@ -1685,123 +3088,284 @@
                 const s = d['Size'];
                 if (s) sizes[s] = (sizes[s] || 0) + n(d['Total PCS.']);
             }
-            const sorted = Object.entries(sizes).sort((a, b) => b[1] - a[1]).slice(0, 8);
-            const maxVal = sorted.length ? Math.max(...sorted.map(s => s[1])) : 0;
+            const all = Object.entries(sizes).sort((a, b) => b[1] - a[1]);
+            const sub = document.getElementById('sizeSub');
+            if (!all.length) {
+                if (sub) sub.textContent = 'No size data in the current filter';
+                return emptyChart('sizeBar', 'No size data in the current filter.');
+            }
+            const sorted = all.slice(0, 8);
+            const grand = all.reduce((s, e) => s + e[1], 0);
+            const shown = sorted.reduce((s, e) => s + e[1], 0);
+            if (sub) sub.textContent = all.length > sorted.length
+                ? `Top ${sorted.length} of ${all.length} sizes — ${((shown / grand) * 100).toFixed(0)}% of all pieces`
+                : `All ${all.length} size${all.length === 1 ? '' : 's'} by volume`;
+
+            const maxVal = Math.max.apply(null, sorted.map(s => s[1]));
             Plotly.newPlot('sizeBar', [{
                 x: sorted.map(s => s[0]), y: sorted.map(s => s[1]), type: 'bar',
                 marker: { color: '#0891b2' },
-                hovertemplate: '%{x}: %{y:,.0f} pcs<extra></extra>'
+                text: sorted.map(s => fmt(s[1])),
+                textposition: 'outside', cliponaxis: false,
+                textfont: { size: 9, family: 'Poppins', color: '#475569' },
+                customdata: sorted.map(s => ((s[1] / grand) * 100).toFixed(1)),
+                hovertemplate: '<b>%{x}</b><br>%{y:,.0f} pcs (%{customdata}% of total)<extra></extra>'
             }], {
-                ...PLY, showlegend: false,
-                xaxis: { ...PLY.xaxis, gridcolor: 'transparent', tickangle: -30 },
-                yaxis: { ...PLY.yaxis, range: [0, (maxVal || 1) * 1.18] },
-                margin: { t: 6, r: 8, b: 52, l: 44 }
+                ...PLY, showlegend: false, bargap: 0.35,
+                xaxis: { ...PLY.xaxis, type: 'category', gridcolor: 'transparent', tickangle: -30, automargin: true },
+                yaxis: { ...PLY.yaxis, range: [0, (maxVal || 1) * 1.25] },
+                margin: { t: 22, r: 8, b: 50, l: 48 }
             }, CFG);
         }
 
+        // A RATE cannot be drawn as a pie. The old version fed each packer's
+        // alter percentage into a donut, and a pie normalises its values into
+        // shares — so packers with 1.3% and 1.1% alter rates were rendered as
+        // "54.2%" and "45.8%". Those numbers were pure artefacts of the chart
+        // type. Rates belong on a bar chart with a real axis.
         function renderAlterDonut(data) {
-            const packerTotals = {};
+            const agg = {};
             for (let i = 0; i < data.length; i++) {
                 const d = data[i];
                 const p = d['Packer Name'];
                 if (!p) continue;
-                if (!packerTotals[p]) {
-                    packerTotals[p] = { tot: 0, alt: 0 };
-                }
-                packerTotals[p].tot += n(d['Total PCS.']);
-                packerTotals[p].alt += n(d['Alter PCS.']);
+                if (!agg[p]) agg[p] = { tot: 0, alt: 0 };
+                agg[p].tot += n(d['Total PCS.']);
+                agg[p].alt += n(d['Alter PCS.']);
             }
-            const packers = Object.keys(packerTotals).sort();
-            const rates = packers.map(p => {
-                const { tot, alt } = packerTotals[p];
-                return tot ? parseFloat(((alt / tot) * 100).toFixed(1)) : 0;
-            });
-            Plotly.newPlot('alterDonut', [{
-                labels: packers, values: rates, type: 'pie', hole: 0.52,
-                marker: { colors: ['#2563eb', '#e11d48', '#059669', '#d97706'] },
-                textinfo: 'label+percent', textfont: { size: 9, family: 'Poppins' },
-                hovertemplate: '%{label}: %{value}% alter rate<extra></extra>',
-                insidetextorientation: 'radial'
-            }], {
-                ...PLY, showlegend: false, margin: { t: 14, r: 14, b: 14, l: 14 },
-                title: { text: 'Alter %', font: { size: 10, color: '#94a3b8' }, y: 0.5, x: 0.5, xanchor: 'center', yanchor: 'middle' }
-            }, CFG);
+            const rows = Object.keys(agg)
+                .filter(p => agg[p].tot > 0)
+                .map(p => ({ p: p, tot: agg[p].tot, alt: agg[p].alt, rate: agg[p].alt / agg[p].tot * 100 }))
+                .sort((a, b) => b.rate - a.rate);   // worst first → best ends up on top
+
+            const sub = document.getElementById('alterSub');
+            if (!rows.length) {
+                if (sub) sub.textContent = 'No packer data in the current filter';
+                return emptyChart('alterDonut', 'No packer data in the current filter.');
+            }
+
+            const totAll = rows.reduce((s, r) => s + r.tot, 0);
+            const altAll = rows.reduce((s, r) => s + r.alt, 0);
+            const avg = totAll ? altAll / totAll * 100 : 0;
+            if (sub) sub.textContent =
+                `Altered % of each packer's output — overall ${avg.toFixed(2)}% · lower is better`;
+
+            renderRateBars('alterDonut', rows.map(r => r.p), rows, avg);
         }
 
-        function renderScatter(data) {
-            const xFresh = new Array(data.length);
-            const yAlter = new Array(data.length);
-            const colors = new Array(data.length);
-            const hoverText = new Array(data.length);
-            for (let i = 0; i < data.length; i++) {
-                const d = data[i];
-                xFresh[i] = n(d['Fresh PCS.']);
-                yAlter[i] = n(d['Alter PCS.']);
-                colors[i] = d['Category'] === 'Ladies' ? '#e11d48' : '#2563eb';
-                hoverText[i] = `${d['Category'] || ''} | Style ${d['Style No.'] || ''}`;
-            }
-            Plotly.newPlot('scatterChart', [{
-                x: xFresh,
-                y: yAlter,
-                mode: 'markers', type: 'scatter',
-                marker: { color: colors, size: 5, opacity: 0.6 },
-                text: hoverText,
-                hovertemplate: 'Fresh: %{x}<br>Alter: %{y}<br>%{text}<extra></extra>'
-            }], {
-                ...PLY, showlegend: false, margin: { t: 6, r: 8, b: 38, l: 44 },
-                xaxis: { ...PLY.xaxis, title: { text: 'Fresh PCS', font: { size: 9 } } },
-                yaxis: { ...PLY.yaxis, title: { text: 'Alter PCS', font: { size: 9 } } }
-            }, CFG);
-        }
-
-        function renderMonthBar(data) {
-            const months = {};
-            for (let i = 0; i < data.length; i++) {
-                const d = data[i];
-                const m = d['Month'];
-                if (m) months[m] = (months[m] || 0) + n(d['Total PCS.']);
-            }
-            const keys = Object.keys(months);
-            const vals = Object.values(months);
-            const cols = ['#2563eb', '#0891b2', '#059669', '#d97706'];
-            const maxVal = vals.length ? Math.max(...vals) : 0;
-            Plotly.newPlot('monthBar', [{
-                x: keys, y: vals, type: 'bar',
-                text: vals.map(v => fmt(v)), textposition: 'outside', textfont: { size: 9, color: '#2563eb' },
-                marker: { color: keys.map((_, i) => cols[i % cols.length]) },
-                hovertemplate: '%{x}: %{y:,.0f} pcs<extra></extra>'
+        // Shared horizontal "rate" bar chart: value labels, colour-coded against
+        // the overall average, and a dotted average reference line.
+        function renderRateBars(id, labels, rows, avg) {
+            const maxRate = Math.max(avg, ...rows.map(r => r.rate));
+            Plotly.newPlot(id, [{
+                y: labels, x: rows.map(r => +r.rate.toFixed(2)),
+                type: 'bar', orientation: 'h',
+                marker: {
+                    color: rows.map(r => r.rate > avg ? '#e11d48' : '#059669'),
+                    line: { width: 0 }
+                },
+                text: rows.map(r => r.rate.toFixed(2) + '%'),
+                textposition: 'outside', cliponaxis: false,
+                textfont: { size: 9, family: 'Poppins', color: '#475569' },
+                customdata: rows.map(r => [fmt(r.alt), fmt(r.tot)]),
+                hovertemplate: '<b>%{y}</b><br>%{x:.2f}% altered<br>%{customdata[0]} of %{customdata[1]} pcs<extra></extra>'
             }], {
                 ...PLY, showlegend: false,
-                margin: { t: 20, r: 8, b: 36, l: 44 },
-                yaxis: { ...PLY.yaxis, range: [0, (maxVal || 1) * 1.22] },
-                xaxis: { ...PLY.xaxis, gridcolor: 'transparent' }
+                margin: { t: 6, r: 46, b: 30, l: 78 },
+                // keep bars a sane thickness when there are only two or three
+                bargap: rows.length <= 2 ? 0.62 : rows.length <= 4 ? 0.46 : 0.35,
+                xaxis: {
+                    ...PLY.xaxis, range: [0, (maxRate || 1) * 1.3], ticksuffix: '%',
+                    zeroline: true, zerolinecolor: '#e2e8f0'
+                },
+                // type must be pinned: the average-line shape below carries
+                // numeric coords, and without this Plotly re-infers the category
+                // axis as linear and prints -0.5, 0, 0.5 … instead of the names.
+                yaxis: { ...PLY.yaxis, type: 'category', gridcolor: 'transparent', automargin: true },
+                shapes: [{
+                    type: 'line', xref: 'x', yref: 'paper',   // paper: spans full height, no category maths
+                    x0: avg, x1: avg, y0: 0, y1: 1,
+                    line: { color: '#94a3b8', width: 1, dash: 'dot' }
+                }],
+                annotations: [{
+                    x: avg, y: 1, xref: 'x', yref: 'paper', yanchor: 'bottom', xanchor: 'center',
+                    text: 'avg ' + avg.toFixed(2) + '%', showarrow: false,
+                    font: { size: 8, color: '#94a3b8', family: 'Poppins' }
+                }]
             }, CFG);
         }
 
+        // One trace per category, so the colours are explained by a legend
+        // instead of being an undocumented code the reader has to guess.
+        function renderScatter(data) {
+            const groups = {};
+            for (let i = 0; i < data.length; i++) {
+                const d = data[i];
+                const c = d['Category'] || 'Uncategorised';
+                if (!groups[c]) groups[c] = { x: [], y: [], t: [] };
+                groups[c].x.push(n(d['Fresh PCS.']));
+                groups[c].y.push(n(d['Alter PCS.']));
+                groups[c].t.push('Style ' + (d['Style No.'] ?? '—') + ' · Lot ' + (d['Lot No.'] ?? '—'));
+            }
+            const cats = Object.keys(groups).sort();
+            const sub = document.getElementById('scatterSub');
+            if (!cats.length) {
+                if (sub) sub.textContent = 'Nothing to plot in the current filter';
+                return emptyChart('scatterChart', 'No entries match the current filters.');
+            }
+            const entries = cats.reduce((s, c) => s + groups[c].x.length, 0);
+            const withAlter = cats.reduce((s, c) => s + groups[c].y.filter(v => v > 0).length, 0);
+            if (sub) sub.textContent =
+                `${fmt(entries)} entries · ${fmt(withAlter)} had alterations (${((withAlter / entries) * 100).toFixed(0)}%)`;
+
+            const PALETTE = { Ladies: '#e11d48', Mens: '#2563eb', Uncategorised: '#94a3b8' };
+            const traces = cats.map((c, i) => ({
+                x: groups[c].x, y: groups[c].y, name: c,
+                mode: 'markers', type: 'scatter',
+                marker: { color: PALETTE[c] || ['#059669', '#d97706', '#7c3aed'][i % 3], size: 6, opacity: 0.65 },
+                text: groups[c].t,
+                hovertemplate: '<b>' + c + '</b><br>Fresh %{x:,} · Alter %{y:,}<br>%{text}<extra></extra>'
+            }));
+
+            Plotly.newPlot('scatterChart', traces, {
+                ...PLY, margin: { t: 6, r: 10, b: 46, l: 48 },
+                legend: { ...PLY.legend, y: -0.34 },
+                xaxis: { ...PLY.xaxis, title: { text: 'Fresh pieces', font: { size: 9 } } },
+                yaxis: { ...PLY.yaxis, title: { text: 'Altered pieces', font: { size: 9 } } }
+            }, CFG);
+        }
+
+        // Monthly totals, grouped by the month the DATE actually falls in.
+        // The old version bucketed on the free-text "Month" column, which has
+        // three problems: it can disagree with the row's own date (the ⚠ panel
+        // flags those), it merges the same month across different years into one
+        // bar, and Object.keys returned insertion order so the bars came out
+        // unsorted. It also hard-coded the label "April vs May totals".
+        let monthYearChoice = '';   // '' = every year, else a single 'YYYY'
+        function onMonthYearChange(v) { monthYearChoice = v || ''; renderMonthBar(filteredData); }
+
+        const YEAR_COLORS = ['#2563eb', '#67a3f5', '#a5c9fb', '#0891b2', '#7c3aed'];
+
+        // Grouped by CALENDAR MONTH with one bar per year, so April 2025 and
+        // April 2026 stand side by side instead of being added together.
+        // The old chart bucketed on the free-text "Month" column, which carries
+        // no year — across an Apr-2025→Sep-2026 dataset that silently merged the
+        // two Aprils into a single 64,828 bar (37,592 + 27,236).
+        function renderMonthBar(data) {
+            const byYear = {};          // { '2025': { 3: {tot,alt,days} } }
+            const monthsSeen = {};
+            for (let i = 0; i < data.length; i++) {
+                const d = data[i];
+                const pd = rowDate(d);
+                if (!pd.ok) continue;
+                const y = String(pd.y);
+                if (!byYear[y]) byYear[y] = {};
+                if (!byYear[y][pd.mIdx]) byYear[y][pd.mIdx] = { tot: 0, alt: 0, days: {} };
+                const cell = byYear[y][pd.mIdx];
+                cell.tot += n(d['Total PCS.']);
+                cell.alt += n(d['Alter PCS.']);
+                cell.days[pd.day] = 1;
+                monthsSeen[pd.mIdx] = 1;
+            }
+
+            const allYears = Object.keys(byYear).sort();
+            const sel = document.getElementById('fMonthYear');
+            const sub = document.getElementById('monthSub');
+
+            if (sel) {   // keep the year picker in step with what is on screen
+                const prev = monthYearChoice;
+                sel.innerHTML = '<option value="">All years</option>' +
+                    allYears.map(y => `<option value="${y}">${y}</option>`).join('');
+                sel.value = allYears.indexOf(prev) >= 0 ? prev : '';
+                if (sel.value !== prev) monthYearChoice = sel.value;
+            }
+
+            const years = monthYearChoice ? [monthYearChoice] : allYears;
+            const mIdxs = Object.keys(monthsSeen).map(Number).sort((a, b) => a - b);
+
+            if (!years.length || !mIdxs.length) {
+                if (sub) sub.textContent = 'No dated rows in the current filter';
+                return emptyChart('monthBar', 'No rows with a readable date match the current filters.');
+            }
+
+            const labels = mIdxs.map(i => MONTH_NAMES[i].slice(0, 3));
+            let grand = 0, best = null;
+            const traces = years.map((y, yi) => {
+                const vals = mIdxs.map(i => (byYear[y][i] || { tot: 0 }).tot);
+                grand += vals.reduce((a, b) => a + b, 0);
+                return {
+                    x: labels, y: vals, name: y, type: 'bar',
+                    // strongest colour on the most recent year, muted on older ones
+                    marker: { color: YEAR_COLORS[(years.length - 1 - yi) % YEAR_COLORS.length] },
+                    customdata: mIdxs.map(i => {
+                        const c = byYear[y][i];
+                        return c ? [Object.keys(c.days).length, c.tot ? (c.alt / c.tot * 100).toFixed(2) : '0.00'] : [0, '0.00'];
+                    }),
+                    hovertemplate: '<b>%{x} ' + y + '</b><br>%{y:,.0f} pcs<br>' +
+                        '%{customdata[0]} active days · %{customdata[1]}% altered<extra></extra>'
+                };
+            });
+
+            const maxVal = Math.max.apply(null, traces.reduce((a, t) => a.concat(t.y), [0]));
+            // Every bar carries its value; switch to compact form (37.6k) once
+            // the full number would no longer fit between neighbouring bars.
+            const barCount = traces.length * labels.length;
+            const compact = barCount > 12;
+            traces.forEach(t => {
+                t.text = t.y.map(v => v ? (compact ? fmtK(v) : fmt(v)) : '');
+                t.textposition = 'outside';
+                t.cliponaxis = false;
+                t.textangle = compact ? -90 : 0;
+                t.textfont = { size: compact ? 8 : 9, family: 'Poppins', color: '#475569' };
+            });
+
+            if (sub) {
+                const scope = years.length > 1 ? years.join(' vs ') : years[0];
+                sub.textContent = `${scope} · ${fmt(grand)} pieces across ${mIdxs.length} month${mIdxs.length === 1 ? '' : 's'}`;
+            }
+
+            Plotly.newPlot('monthBar', traces, {
+                ...PLY, barmode: 'group', bargap: 0.28, bargroupgap: 0.08,
+                showlegend: years.length > 1,
+                legend: { ...PLY.legend, y: -0.22 },
+                // rotated labels need extra headroom above the tallest bar
+                margin: { t: compact ? 34 : 22, r: 12, b: years.length > 1 ? 52 : 34, l: 52 },
+                yaxis: { ...PLY.yaxis, range: [0, (maxVal || 1) * (compact ? 1.3 : 1.18)], title: { text: '' } },
+                xaxis: { ...PLY.xaxis, type: 'category', gridcolor: 'transparent', automargin: true }
+            }, CFG);
+        }
+
+        // Same fix as renderAlterDonut: this was a donut of per-category alter
+        // rates, so Ladies 1.2% / Mens 0.0% was drawn as "Ladies 100% / 0%" —
+        // which read as if every piece were Ladies. Now a real rate axis.
         function renderAlterCatDonut(data) {
-            const catTotals = {};
+            const agg = {};
             for (let i = 0; i < data.length; i++) {
                 const d = data[i];
                 const c = d['Category'];
                 if (!c) continue;
-                if (!catTotals[c]) {
-                    catTotals[c] = { tot: 0, alt: 0 };
-                }
-                catTotals[c].tot += n(d['Total PCS.']);
-                catTotals[c].alt += n(d['Alter PCS.']);
+                if (!agg[c]) agg[c] = { tot: 0, alt: 0 };
+                agg[c].tot += n(d['Total PCS.']);
+                agg[c].alt += n(d['Alter PCS.']);
             }
-            const cats = Object.keys(catTotals).sort();
-            const rates = cats.map(c => {
-                const { tot, alt } = catTotals[c];
-                return tot ? parseFloat(((alt / tot) * 100).toFixed(1)) : 0;
-            });
-            Plotly.newPlot('alterCatDonut', [{
-                labels: cats, values: rates, type: 'pie', hole: 0.52,
-                marker: { colors: ['#e11d48', '#2563eb'] },
-                textinfo: 'label+percent', textfont: { size: 9, family: 'Poppins' },
-                hovertemplate: '%{label}: %{value}% alter rate<extra></extra>',
-                insidetextorientation: 'radial'
-            }], { ...PLY, showlegend: false, margin: { t: 14, r: 14, b: 14, l: 14 } }, CFG);
+            const rows = Object.keys(agg)
+                .filter(c => agg[c].tot > 0)
+                .map(c => ({ p: c, tot: agg[c].tot, alt: agg[c].alt, rate: agg[c].alt / agg[c].tot * 100 }))
+                .sort((a, b) => b.rate - a.rate);
+
+            const sub = document.getElementById('alterCatSub');
+            if (!rows.length) {
+                if (sub) sub.textContent = 'No category data in the current filter';
+                return emptyChart('alterCatDonut', 'No category data in the current filter.');
+            }
+
+            const totAll = rows.reduce((s, r) => s + r.tot, 0);
+            const altAll = rows.reduce((s, r) => s + r.alt, 0);
+            const avg = totAll ? altAll / totAll * 100 : 0;
+            if (sub) sub.textContent =
+                `Rework rate per category — overall ${avg.toFixed(2)}% · lower is better`;
+
+            renderRateBars('alterCatDonut', rows.map(r => r.p), rows, avg);
         }
 
         function renderInsights(data) {
@@ -1837,9 +3401,10 @@
         }
 
         // ─── Table: search, sort, render, export ───
+        const TABLE_MAX = 500;              // rows rendered at once
         let tableSort = { key: 'Date', dir: 'desc' };
         let tableSearchQuery = '';
-        let tableRows = []; // currently displayed rows (after search + sort)
+        let tableRows = null; // currently displayed rows (after search + sort); null = not rendered yet
         let tableSearchTimer;
 
         function debouncedTableSearch() {
@@ -1876,15 +3441,23 @@
             return q.split(/\s+/).every(term => hay.includes(term));
         }
 
+        const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        // Sheet cells go straight into innerHTML below — escape first so a stray
+        // "<" (or anything worse) in a style/lot value can't break the table out.
+        function escHtml(v) {
+            return String(v ?? '').replace(/[&<>"']/g, c => HTML_ESC[c]);
+        }
+
         function highlight(text, q) {
-            const s = String(text ?? '—');
+            const s = escHtml(text ?? '—') || '—';
             if (!q) return s;
-            let out = s;
-            q.split(/\s+/).filter(Boolean).forEach(term => {
-                const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                out = out.replace(new RegExp('(' + safe + ')', 'gi'), '<mark>$1</mark>');
-            });
-            return out;
+            // Escape the terms too — the haystack is escaped now, so a raw term
+            // would never match. One combined pass, so we never re-match the
+            // <mark> tags an earlier term already inserted.
+            const terms = q.split(/\s+/).filter(Boolean)
+                .map(t => escHtml(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+            if (!terms.length) return s;
+            return s.replace(new RegExp('(' + terms.join('|') + ')', 'gi'), '<mark>$1</mark>');
         }
 
         function sortRows(rows) {
@@ -1926,14 +3499,30 @@
             tableRows = rows;
             updateSortIndicators();
 
-            const MAX = 500;
+            const MAX = TABLE_MAX;
             const view = rows.slice(0, MAX);
 
-            document.getElementById('tableBody').innerHTML = view.map(d => `
-    <tr>
-      <td>${highlight(normaliseDate(d['Date']).slice(0, 10) || '—', q)}</td>
+            if (!rows.length) {
+                document.getElementById('tableBody').innerHTML =
+                    `<tr><td colspan="11" class="table-empty">No records match the current filters${q ? ` and search “${escHtml(q)}”` : ''}.<br>Try clearing a filter or the search box.</td></tr>`;
+                document.getElementById('tableFoot').innerHTML = '';
+                document.getElementById('tableSub').textContent = 'No matching records';
+                document.getElementById('tableFooterNote').innerHTML = '<span>0 rows</span>';
+                return;
+            }
+
+            document.getElementById('tableBody').innerHTML = view.map(d => {
+                const pd = rowDate(d);
+                // A row whose date cannot be read shows the raw cell flagged in
+                // place, rather than a blank that hides the problem.
+                const dateCell = pd.ok
+                    ? highlight(pd.display, q)
+                    : `<span class="cell-bad" title="${escHtml(pd.reason)}">⚠ ${escHtml(isBlank(d['Date']) ? '(blank)' : d['Date'])}</span>`;
+                return `
+    <tr data-i="${d.__i}"${issueRowSet.has(d) ? ' class="has-issue"' : ''}>
+      <td>${dateCell}</td>
       <td>${highlight(d['Month'] || '—', q)}</td>
-      <td><span class="badge ${(d['Category'] || '').toLowerCase()}">${d['Category'] || '—'}</span></td>
+      <td><span class="badge ${escHtml((d['Category'] || '').toLowerCase())}">${escHtml(d['Category'] || '—')}</span></td>
       <td>${highlight(d['Packer Name'] || '—', q)}</td>
       <td>${highlight(d['Style No.'] || '—', q)}</td>
       <td>${highlight(d['Lot No.'] || '—', q)}</td>
@@ -1942,7 +3531,8 @@
       <td class="num" style="color:#d97706;font-weight:600">${fmt(n(d['Alter PCS.']))}</td>
       <td class="num" style="color:#7c3aed;font-weight:600">${fmt(n(d['Mix PCS.']))}</td>
       <td class="num" style="font-weight:700;color:#0f172a">${fmt(n(d['Total PCS.']))}</td>
-    </tr>`).join('');
+    </tr>`;
+            }).join('');
 
             // totals footer (over ALL matching rows, not just the visible 500)
             let tF = 0, tA = 0, tM = 0, tT = 0;
@@ -1968,8 +3558,9 @@
         const EXPORT_COLS = ['Date', 'Month', 'Category', 'Packer Name', 'Style No.', 'Lot No.', 'Size', 'Fresh PCS.', 'Alter PCS.', 'Mix PCS.', 'Total PCS.'];
 
         function exportRows() {
-            // export the current search+sort result (all of it), or full filtered set if no search
-            return (tableRows && tableRows.length) ? tableRows : sortRows(filteredData);
+            // export the current search+sort result (all of it), or full filtered set if no search.
+            // Note the null check: an empty result must export nothing, not everything.
+            return tableRows ? tableRows : sortRows(filteredData);
         }
         function stamp() {
             const d = new Date();
@@ -1996,7 +3587,9 @@
             downloadBlob('\uFEFF' + header + '\n' + body, `packing_report_${stamp()}.csv`, 'text/csv;charset=utf-8;');
         }
         function exportJSON() {
-            downloadBlob(JSON.stringify(exportRows(), null, 2), `packing_report_${stamp()}.json`, 'application/json');
+            // stripIndex: rows carry an internal __s search blob that has no
+            // business in a downloaded report.
+            downloadBlob(JSON.stringify(stripIndex(exportRows()), null, 2), `packing_report_${stamp()}.json`, 'application/json');
         }
         function printReport() { window.print(); }
 
@@ -2019,7 +3612,61 @@
         });
         window.addEventListener('orientationchange', () => setTimeout(resizeCharts, 300));
 
-        window.addEventListener('load', fetchFromAPI);
+        // ─── Chart placeholders while the deferred library loads ───
+        function showChartSkeletons() {
+            CHART_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.data) el.classList.add('skeleton');
+            });
+        }
+        function clearChartSkeletons() {
+            CHART_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove('skeleton');
+            });
+        }
+        function showChartMessage(msg) {
+            CHART_IDS.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.data) {
+                    el.classList.remove('skeleton');
+                    el.innerHTML = '<div class="chart-msg">' + escHtml(msg) + '</div>';
+                }
+            });
+        }
+        function markPlotlyReady() {
+            if (plotlyReady) return;
+            plotlyReady = true;
+            clearChartSkeletons();
+            if (allData && allData.length) renderCharts(filteredData);
+        }
+
+        // ─── Boot ───
+        // The live request is already in flight (started at parse time). Paint
+        // the cache now instead of waiting for window.load, which sat behind the
+        // Plotly download and made every cold-cache visit look broken.
+        const plotlyTag = document.getElementById('plotlySrc');
+        if (typeof Plotly !== 'undefined') {
+            plotlyReady = true;
+        } else if (plotlyTag) {
+            plotlyTag.addEventListener('load', markPlotlyReady);
+            plotlyTag.addEventListener('error', () => {
+                plotlyFailed = true;
+                showChartMessage('Charts unavailable — the chart library could not be loaded.');
+            });
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape' && dqOpen) closeIssues();
+        });
+
+        fetchFromAPI(false);
+
+        // Re-sync when the machine comes back online — this dashboard is
+        // explicitly built to keep working from cache while offline.
+        window.addEventListener('online', () => {
+            if (!document.getElementById('refreshBtn').disabled) fetchFromAPI(true);
+        });
     </script>
 </body>
 
