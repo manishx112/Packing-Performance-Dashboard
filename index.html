@@ -19,16 +19,24 @@
         window.PPD = {
             API_URL: 'https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnR4na-psbpwY0IXTfoagW5jyen_WvjoIBDQfv5EXbHc5WCwSEZSv1Q3gFTb1PxYsOTDRX4HYBU2LSlbwEYaR6Pdw0hQNkWrjMBsLXQB5KkL3Rwv7tgbTJqRGiqNE2Y6To-gXnKL0VzeiVX-1f9Qs4X_YMJ-fRbcxU1r0c_CYW6wpbqKNlwDccKcn7051rO7UbjXT8mUSSgt130Wk_tOPQROpuacEzKXO7sgd-KVEBtdnzWqOjBTp2OR0xnTqhGucLDLdSxkQ2oQL8ma3VVWRCwnZhMRIQ&lib=MqtZhu1Q8rOjJDbP0eBW7mCU-P2DTP4Ui',
             LOCALE: 'en-IN',            // number grouping: 5,51,163 and 5.5L
-            CACHE_KEY: 'ppd_cache_v3',
-            CACHE_MAX_AGE_DAYS: 7,
-            FETCH_TIMEOUT_MS: 25000,
+            // A copy of the last good data is kept on this device (IndexedDB),
+            // so the dashboard opens instantly from it while the sheet is
+            // fetched in parallel. Older than this, the copy is thrown away.
+            CACHE_KEY: 'ppd_cache_v4',
+            CACHE_MAX_AGE_DAYS: 30,
+            // The Apps Script endpoint has been measured at 8–11 s and at over
+            // 60 s on a bad call. Saved data stays on screen while it waits.
+            FETCH_TIMEOUT_MS: 90000,
             DEFAULT_RANGE: 'last90',    // all | last7 | last30 | last90 | last365 | thisMonth | lastMonth | thisYear | lastYear
             DEFAULT_SHEET: 'lookup',    // lookup (Lots & Styles) | overview | lots | packers | quality | data
-            // The same Lot No. appearing more than this many days apart is a
-            // different lot that re-used the number. (Checked against the sheet:
-            // every lot is packed within a single day, and re-used numbers come
-            // back months later.)
-            LOT_REUSE_GAP_DAYS: 30,
+            // Lot numbers are re-used for new lots later on. A later date with
+            // the same Lot No. is a NEW lot when it comes more than
+            // LOT_REUSE_GAP_DAYS after the previous date and shares no Style
+            // No. with it; sharing a style means a late top-up of the same lot
+            // (e.g. 13 pcs of the same style 5 weeks later). After
+            // LOT_MAX_SPAN_DAYS it is always a new lot.
+            LOT_REUSE_GAP_DAYS: 7,
+            LOT_MAX_SPAN_DAYS: 120,
             // Treat "28*32", "28X32" and "28 & 32" as one size in every chart
             // and filter. The original spelling stays visible in the Data tab.
             NORMALIZE_SIZES: true,
@@ -44,11 +52,45 @@
             // Fresh and Alter typed into each other's columns.
             SUSPECT_ALTER_PCT: 25,
             PAGE_SIZE: 25,
-            AUTO_REFRESH_MIN: 10        // re-sync when the tab regains focus after this long
+            AUTO_REFRESH_MIN: 10        // while the page is open, re-check the sheet this often
         };
 
-        /* Start the data request now, in parallel with the page, the font and
-           the chart library, instead of queueing behind them. */
+        /* Tiny IndexedDB key-value store for the saved copy. localStorage is
+           capped at ~5 MB per site and shared with every page on the same
+           GitHub Pages domain; IndexedDB has room to grow with the sheet. */
+        PPD.store = (function () {
+            var dbp = null;
+            function db() {
+                if (!dbp) dbp = new Promise(function (res, rej) {
+                    var rq = indexedDB.open(PPD.CACHE_KEY, 1);
+                    rq.onupgradeneeded = function () { rq.result.createObjectStore('kv'); };
+                    rq.onsuccess = function () { res(rq.result); };
+                    rq.onerror = function () { rej(rq.error); };
+                    rq.onblocked = function () { rej(new Error('blocked')); };
+                });
+                return dbp;
+            }
+            function run(mode, fn) {
+                return db().then(function (d) {
+                    return new Promise(function (res, rej) {
+                        var t = d.transaction('kv', mode), rq = fn(t.objectStore('kv'));
+                        t.oncomplete = function () { res(rq.result); };
+                        t.onerror = t.onabort = function () { rej(t.error); };
+                    });
+                });
+            }
+            return {
+                get: function (k) { return run('readonly', function (s) { return s.get(k); }); },
+                put: function (k, v) { return run('readwrite', function (s) { return s.put(v, k); }); }
+            };
+        })();
+
+        /* Start BOTH reads now, in parallel with the page, the font and the
+           chart library: the saved copy (instant) and the live sheet (slow). */
+        PPD.cached = (function () {
+            try { var p = PPD.store.get('payload'); p.catch(function () { }); return p; }
+            catch (e) { return null; }
+        })();
         PPD.prefetch = (function () {
             try {
                 var ctl = new AbortController();
@@ -129,13 +171,70 @@
         .range b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
         .range span { font-size: 11.5px; color: #9fb0c3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
         .top-r { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none }
-        .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #c5d1de; white-space: nowrap }
+        /* ─── Data status ("Updated 3 min ago") + details popover ─── */
+        .sync { position: relative; flex: none }
+        .status {
+            display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px 0 9px; border-radius: 8px;
+            border: 1px solid transparent; background: none; color: #c5d1de; text-align: left; white-space: nowrap
+        }
+        .status:hover, .status[aria-expanded="true"] { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .12) }
         .status i { width: 8px; height: 8px; border-radius: 50%; background: #8b95a5; flex: none }
         .status.live i { background: #40c057; box-shadow: 0 0 0 3px rgba(64, 192, 87, .22) }
-        .status.cached i { background: #fab005 }
-        .status.off i { background: #fa5252 }
+        .status.cached i { background: #fab005; box-shadow: 0 0 0 3px rgba(250, 176, 5, .2) }
+        .status.off i { background: #fa5252; box-shadow: 0 0 0 3px rgba(250, 82, 82, .22) }
         .status.sync i { background: #74c0fc; animation: pulse 1s ease-in-out infinite }
+        .st { display: flex; flex-direction: column; line-height: 1.2; min-width: 0 }
+        .st b { font-size: 12.5px; font-weight: 600; color: #e6ebf1 }
+        .st small { font-size: 11px; color: #9fb0c3 }
         @keyframes pulse { 50% { opacity: .35 } }
+        .syncpop {
+            position: absolute; right: 0; top: calc(100% + 8px); width: 320px; max-width: calc(100vw - 20px); z-index: 90;
+            background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--sh2); padding: 14px
+        }
+        .sp-h { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13.5px; margin-bottom: 10px }
+        .sp-h i { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #8b95a5 }
+        .sp-h i.live { background: #40c057 } .sp-h i.cached { background: #fab005 } .sp-h i.off { background: #fa5252 }
+        .sp-h i.sync { background: #74c0fc; animation: pulse 1s ease-in-out infinite }
+        .sp-dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 12.5px; margin-bottom: 10px }
+        .sp-dl dt { color: var(--muted) }
+        .sp-dl dd { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 0 }
+        .sp-dl dd small { display: block; font-weight: 400; color: var(--muted) }
+        .sp-note { font-size: 11.5px; color: var(--ink2); background: #f8f9fb; border-radius: 8px; padding: 8px 10px; margin-bottom: 10px }
+        .sp-err { font-size: 12px; color: var(--bad); margin-bottom: 10px }
+        .syncpop .btn { width: 100%; justify-content: center }
+        /* thin progress line under the header while the sheet is being fetched */
+        .top::after {
+            content: ''; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; opacity: 0; pointer-events: none;
+            background: linear-gradient(90deg, transparent, #74c0fc, #4e79a7, transparent); background-size: 50% 100%;
+            background-repeat: no-repeat; transition: opacity .3s
+        }
+        body.syncing .top::after { opacity: 1; animation: syncbar 1.4s linear infinite }
+        @keyframes syncbar { 0% { background-position: -50% 0 } 100% { background-position: 150% 0 } }
+        /* first ever visit: nothing saved yet — say what is happening, never "no data" */
+        .loadbox {
+            display: flex; align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--line);
+            border-radius: var(--r); padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--sh)
+        }
+        .loadbox .spin {
+            width: 26px; height: 26px; border-radius: 50%; flex: none;
+            border: 3px solid #e7eef6; border-top-color: var(--blue); animation: spin .8s linear infinite
+        }
+        @keyframes spin { to { transform: rotate(360deg) } }
+        .loadbox b { display: block; font-size: 13.5px }
+        .loadbox span { font-size: 12px; color: var(--ink2) }
+        body.booting .empty, body.booting .summary, body.booting .pager { visibility: hidden }
+        body.booting .kpis:empty, body.booting .tw:has(table:empty) {
+            background: linear-gradient(90deg, #f1f3f5 25%, #e7eaee 37%, #f1f3f5 63%);
+            background-size: 400% 100%; animation: sk 1.3s ease infinite; border-radius: var(--r)
+        }
+        body.booting .kpis:empty { min-height: 104px }
+        body.booting .tw:has(table:empty) { min-height: 220px }
+        .toast {
+            position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); opacity: 0; z-index: 200;
+            background: #1e2a38; color: #fff; font-size: 13px; font-weight: 500; padding: 10px 16px; border-radius: 10px;
+            box-shadow: var(--sh2); transition: opacity .25s, transform .25s; pointer-events: none; max-width: calc(100vw - 32px)
+        }
+        .toast.on { opacity: 1; transform: translate(-50%, 0) }
         .tbtn {
             height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .06);
@@ -494,7 +593,10 @@
             .gsearch { order: 10; flex: 1 1 100%; max-width: none; margin: 0 }
             .gsearch kbd { display: none }
             .sugg { min-width: 0 }
-            .status span { display: none }
+            .st small { display: none }   /* keep "Updated 3 min ago" visible on phones */
+            .syncpop { position: fixed; left: 10px; right: 10px; width: auto; max-width: none }   /* top set from JS, under the header */
+            .status { padding: 0 6px; height: 32px }
+            .st b { font-size: 12px }
             .top { gap: 8px; padding: 0 10px }
             .tbtn .lbl { display: none }
             .main { padding: 10px 10px 40px }
@@ -539,7 +641,12 @@
             <div class="sugg" id="gsugg" role="listbox" hidden></div>
         </div>
         <div class="top-r">
-            <span class="status" id="status"><i></i><span id="statusTxt">Loading…</span></span>
+            <div class="sync">
+                <button class="status sync" id="status" aria-haspopup="dialog" aria-expanded="false" aria-controls="syncPop">
+                    <i></i><span class="st"><b id="statusTxt">Loading…</b><small id="statusSub">fetching the sheet</small></span>
+                </button>
+                <div class="syncpop" id="syncPop" role="dialog" aria-label="Data status" hidden></div>
+            </div>
             <button class="tbtn dq" id="dqBtn" hidden title="Data issues found in the sheet">⚠ <span class="lbl">Issues</span> <b id="dqCount">0</b></button>
             <button class="tbtn" id="btnRefresh" title="Fetch the latest data">⟳ <span class="lbl">Refresh</span></button>
         </div>
@@ -606,6 +713,10 @@
 
         <main class="main" id="main">
             <div class="err" id="errBanner" hidden></div>
+            <div class="loadbox" id="loadBox" hidden role="status" aria-live="polite">
+                <div class="spin" aria-hidden="true"></div>
+                <div><b id="loadTxt">Loading production data from the sheet…</b><span id="loadSub">The first load can take up to a minute. After that the dashboard opens instantly from a copy saved on this device.</span></div>
+            </div>
 
             <nav class="tabs" role="tablist" aria-label="Dashboard sheets">
                 <button class="tab" role="tab" data-sheet="lookup" aria-selected="true">Lots &amp; Styles</button>
@@ -619,6 +730,7 @@
             <div class="bar"><div class="bar" id="chips" style="margin:0"></div><span class="summary" id="summary"></span></div>
 
             <div id="fatal" hidden></div>
+            <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
             <!-- ═══ LOTS & STYLES — find any lot or style, and how they connect ═══ -->
             <section class="sheet" id="sh-lookup" data-sheet="lookup" role="tabpanel">
@@ -830,12 +942,14 @@
         const CAT_COLOR = { Mens: '#4e79a7', Ladies: '#f28e2b' };
         const PACKER_PALETTE = ['#4e79a7', '#59a14f', '#b07aa1', '#f28e2b', '#76b7b2', '#edc948', '#9c755f', '#ff9da7'];
         const ALTER = '#e15759', GOOD = '#59a14f', FRESH = '#59a14f', MIX = '#b07aa1';
+        const NO_CAT = 'No category';
         const FACETS = ['cat', 'packer', 'size'];
         const FACET_LABEL = { cat: 'Category', packer: 'Packer', size: 'Size' };
 
         const $ = (s, r) => (r || document).querySelector(s);
         const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
         const NF = new Intl.NumberFormat(C.LOCALE || 'en-IN', { maximumFractionDigits: 0 });
+        // numeric: true sorts "98" before "1194" and still orders "A12" / "1021-B" sensibly
         const COLL = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
         const fmt = v => NF.format(Math.round(+v || 0));
         const pctOf = (a, b) => (b ? a / b * 100 : 0);
@@ -882,7 +996,6 @@
             if (a === b) return fDay(a);
             return (Yr(a) === Yr(b) ? fDayS(a) : fDay(a)) + ' – ' + fDay(b);
         }
-        function clock(ts) { const d = new Date(ts); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
         function ago(ts) {
             const s = Math.max(0, (Date.now() - ts) / 1000);
             if (s < 90) return 'just now';
@@ -965,10 +1078,12 @@
             return out;
         }
 
-        // A Lot No. is re-used for a brand-new lot months later (202 numbers in
+        // A Lot No. is re-used for a brand-new lot later on (~200 numbers in
         // the sheet at the time of writing). Keying lots on the number alone
-        // would merge unrelated lots, so each number is split into "runs" at any
-        // gap longer than LOT_REUSE_GAP_DAYS. A run is the real, physical lot.
+        // would merge unrelated lots, so each number is split into "runs". A
+        // run is the real, physical lot. A time gap alone gets it wrong both
+        // ways (lot 1194: two different lots 16 days apart; lot 1265: a 13-pc
+        // top-up of the same style 38 days later), so the styles decide too.
         function assignLotRuns(recs) {
             const byLot = new Map();
             for (const r of recs) {
@@ -977,17 +1092,23 @@
                 if (!list) byLot.set(r.lot, list = []);
                 list.push(r);
             }
-            const gap = C.LOT_REUSE_GAP_DAYS * DAY;
+            const soft = C.LOT_REUSE_GAP_DAYS * DAY, hard = C.LOT_MAX_SPAN_DAYS * DAY;
             for (const [lot, list] of byLot) {
-                list.sort((a, b) => (a.t == null ? Infinity : a.t) - (b.t == null ? Infinity : b.t));
-                let n = 0, start = null, prev = null;
-                for (const r of list) {
-                    if (r.t == null) { r.run = lot + '@undated'; continue; }
-                    if (prev == null || r.t - prev > gap) { n++; start = r.t; }
-                    r.run = lot + '@' + iso(start);
-                    r.runStart = start;
-                    r.runNo = n;
-                    prev = r.t;
+                const dated = list.filter(r => r.t != null).sort((a, b) => a.t - b.t);
+                for (const r of list) if (r.t == null) r.run = lot + '@undated';
+                let n = 0, start = null, prev = null, styles = null;
+                for (let i = 0; i < dated.length;) {
+                    // one date at a time: every entry of a day belongs to the same lot
+                    const t = dated[i].t, day = [];
+                    while (i < dated.length && dated[i].t === t) day.push(dated[i++]);
+                    const ds = new Set(day.map(r => r.style).filter(Boolean));
+                    const gap = prev == null ? Infinity : t - prev;
+                    // blank styles can't prove a top-up, so only the span limit applies to them
+                    const unrelated = ds.size > 0 && styles != null && styles.size > 0 && ![...ds].some(s => styles.has(s));
+                    if (prev == null || gap > hard || (gap > soft && unrelated)) { n++; start = t; styles = new Set(); }
+                    for (const r of day) { r.run = lot + '@' + iso(start); r.runStart = start; r.runNo = n; }
+                    for (const s of ds) styles.add(s);
+                    prev = t;
                 }
                 for (const r of list) r.runsOfLot = Math.max(n, 1);
             }
@@ -1087,7 +1208,9 @@
             },
             rows: {},                 // last sorted rows per table, for export
             dirty: new Set(SHEETS),
-            srcTs: 0, lastLive: 0, busy: false, focusRec: null, dqKind: 'all'
+            // data freshness: when the data on screen last matched the sheet, and why not if it failed
+            syncedAt: 0, fromCache: false, syncing: false, lastErr: '', fails: 0, retryAt: 0, metaSeen: 0,
+            busy: false, focusRec: null, dqKind: 'all'
         };
 
         function presetRange(p) {
@@ -1319,7 +1442,8 @@
                 e.pcs += r.total; e.alter += r.alter; e.n++;
                 if (r.run) e.runs.add(r.run);
                 e.days.add(t);
-                e.by[r.cat] = (e.by[r.cat] || 0) + r.total;
+                const c = r.cat || NO_CAT;
+                e.by[c] = (e.by[c] || 0) + r.total;
             }
             // A bucket is "partial" when the selected range cuts it (e.g. a
             // 90-day window starting on a Thursday) or it is still in progress.
@@ -1392,6 +1516,7 @@
             const el = document.getElementById(id);
             if (!el) return;
             const emp = el.parentElement.querySelector('.empty');
+            if (!S.recs.length) { el.classList.add('sk'); if (emp) emp.hidden = true; return; }   // still loading: skeleton, never "nothing to show"
             if (!opt) {
                 if (charts[id]) charts[id].clear();
                 el.classList.remove('sk');
@@ -1437,7 +1562,8 @@
             if (!list.some(r => r.ok)) return null;
             const g = effGran(rng), bs = buckets(list, rng, g);
             if (!bs.length) return null;
-            const cats = [...group(list, 'cat').values()].sort((a, b) => b.pcs - a.pcs).map(x => x.key);
+            // blank categories get their own band, so the stack always adds up to the total label
+            const cats = [...group(list, r => r.cat || NO_CAT).values()].sort((a, b) => b.pcs - a.pcs).map(x => x.key);
             const tot = bs.map(b => (b.e ? b.e.pcs : 0));
             const labelTotals = bs.length <= 20;
             const series = cats.map((c, i) => ({
@@ -1993,7 +2119,7 @@
             rowAttr: x => ` class="go" data-run="${esc(x.run)}" tabindex="0"`,
             tiebreak: (a, b) => (b.t || 0) - (a.t || 0),
             cols: [
-                { k: 'lot', label: 'Lot No.', v: x => +x.lot || 0, cell: x => `<b>${esc(x.lot)}</b>${reuseTag(x)}` },
+                { k: 'lot', label: 'Lot No.', v: x => x.lot, cell: x => `<b>${esc(x.lot)}</b>${reuseTag(x)}` },
                 { k: 'date', label: 'Packed on', v: x => x.t || 0, cell: x => (x.t != null ? fDay(x.t) : '—') },
                 { k: 'cat', label: 'Category', v: x => [...x.cats].join(' / '), cell: x => [...x.cats].map(tagCat).join(' ') },
                 { k: 'packer', label: 'Packer', v: x => [...x.packers].join(', ') },
@@ -2025,7 +2151,7 @@
             rowAttr: x => ` class="go" data-sopen="${esc(x.style)}" tabindex="0"`,
             tiebreak: (a, b) => b.pcs - a.pcs,
             cols: [
-                { k: 'style', label: 'Style No.', v: x => +x.style || 0, cell: x => `<b>${esc(x.style)}</b>` },
+                { k: 'style', label: 'Style No.', v: x => x.style, cell: x => `<b>${esc(x.style)}</b>` },
                 { k: 'cat', label: 'Category', v: x => [...x.cats].join(' / '), cell: x => [...x.cats].map(tagCat).join(' ') },
                 { k: 'lots', label: 'Lots', r: 1, v: x => x.runs.size, tip: 'Physical lots — a re-used lot number counts once per lot' },
                 { k: 'lotnos', label: 'Lot Nos.', v: x => x.lots.size, cell: x => idList(x.lots, 4) },
@@ -2061,7 +2187,7 @@
             rowAttr: x => ` class="go" data-sopen="${esc(x.style)}" tabindex="0" title="Open style ${esc(x.style)} — its lots, sizes and months"`,
             tiebreak: (a, b) => b.pcs - a.pcs,
             cols: [
-                { k: 'style', label: 'Style No.', v: x => +x.style || 0, cell: x => `<b>${esc(x.style)}</b>` },
+                { k: 'style', label: 'Style No.', v: x => x.style, cell: x => `<b>${esc(x.style)}</b>` },
                 { k: 'cat', label: 'Category', v: x => [...x.cats].join(' / '), cell: x => [...x.cats].map(tagCat).join(' ') },
                 { k: 'packer', label: 'Packer', v: x => [...x.packers].join(', ') },
                 { k: 'lots', label: 'Lots', r: 1, v: x => x.runs.size },
@@ -2093,10 +2219,10 @@
                     k: 'date', label: 'Date', v: r => (r.t == null ? -1 : r.t),
                     cell: r => (r.ok ? fDay(r.t) : `<span class="warnc" title="${esc(r.dateReason)}">⚠ ${esc(str(r.raw['Date']) || '(blank)')}</span>`)
                 },
-                { k: 'lot', label: 'Lot No.', v: r => +r.lot || 0, cell: r => (r.lot ? `<button class="link" data-run="${esc(r.run)}">${esc(r.lot)}</button>` : '<span class="warnc">—</span>') },
+                { k: 'lot', label: 'Lot No.', v: r => r.lot, cell: r => (r.lot ? `<button class="link" data-run="${esc(r.run)}">${esc(r.lot)}</button>` : '<span class="warnc">—</span>') },
                 { k: 'cat', label: 'Category', v: r => r.cat, cell: r => (r.cat ? tagCat(r.cat) : '<span class="warnc">—</span>') },
                 { k: 'packer', label: 'Packer', v: r => r.packer, cell: r => esc(r.packer) || '<span class="warnc">—</span>' },
-                { k: 'style', label: 'Style No.', v: r => +r.style || 0, cell: r => (r.style ? `<button class="link" data-sopen="${esc(r.style)}">${esc(r.style)}</button>` : '<span class="warnc" title="Style No. is blank in the sheet">—</span>') },
+                { k: 'style', label: 'Style No.', v: r => r.style, cell: r => (r.style ? `<button class="link" data-sopen="${esc(r.style)}">${esc(r.style)}</button>` : '<span class="warnc" title="Style No. is blank in the sheet">—</span>') },
                 {
                     k: 'size', label: 'Size', v: r => r.size,
                     cell: r => (r.sizeRaw && r.sizeRaw !== r.size ? `<span class="raw" title="Typed as “${esc(r.sizeRaw)}” in the sheet">${esc(r.size)}*</span>` : esc(r.size) || '<span class="warnc">—</span>')
@@ -2277,11 +2403,23 @@
             const G = group(S.ex.packer, 'packer'), GP = S.prevOk ? group(S.exPrev.packer, 'packer') : null;
             const all = [...G.values()].sort((a, b) => b.pcs - a.pcs);
             const tot = sum(all, x => x.pcs), avgRate = pctOf(sum(all, x => x.alter), tot), sel = S.f.packer;
+            // Every month from the packer's first to last, zeros included — a
+            // month off must show as a dip, not be skipped over.
+            const byPM = new Map();
+            for (const r of S.ex.packer) {
+                if (!r.ok) continue;
+                let m = byPM.get(r.packer);
+                if (!m) byPM.set(r.packer, m = new Map());
+                const k = monthStart(r.t);
+                m.set(k, (m.get(k) || 0) + r.total);
+            }
             const monthly = p => {
-                const m = new Map();
-                for (const r of S.ex.packer) if (r.packer === p && r.ok) { const k = monthStart(r.t); m.set(k, (m.get(k) || 0) + r.total); }
-                const keys = [...m.keys()].sort((a, b) => a - b);
-                return keys.map(k => m.get(k));
+                const m = byPM.get(p);
+                if (!m) return [];
+                const keys = [...m.keys()];
+                const out = [];
+                for (let s = Math.min(...keys), e = Math.max(...keys); s <= e; s = Date.UTC(Yr(s), Mo(s) + 1, 1)) out.push(m.get(s) || 0);
+                return out;
             };
             const initials = n => { const w = n.split(/\s+/).filter(Boolean); return (w.length > 1 ? w[0][0] + w[1][0] : n.slice(0, 2)).toUpperCase(); };
             $('#pcards').innerHTML = all.map(x => {
@@ -2809,19 +2947,34 @@
             return s.length + ':' + (h >>> 0);
         }
 
-        function readCache() {
-            try {
-                const o = JSON.parse(localStorage.getItem(C.CACHE_KEY) || 'null');
-                if (!o || !Array.isArray(o.data) || !o.data.length) return null;
-                if (Date.now() - o.ts > C.CACHE_MAX_AGE_DAYS * DAY) { localStorage.removeItem(C.CACHE_KEY); return null; }
-                return o;
-            } catch (e) { return null; }
+        // The saved copy lives in IndexedDB (C.store). A tiny note in
+        // localStorage says when it was last synced, so other open tabs can
+        // pick up new data without calling the sheet again.
+        const META_KEY = C.CACHE_KEY + '_meta';
+        const LS_COPY = 'ppd_cache_v3';     // the previous version's copy; also the fallback if IndexedDB is blocked
+        const RECHECK_MS = C.AUTO_REFRESH_MIN * 60000;
+        function readMeta() { try { return JSON.parse(localStorage.getItem(META_KEY) || 'null'); } catch (e) { return null; } }
+        const usable = o => !!(o && Array.isArray(o.data) && o.data.length && o.ts > 0 && Date.now() - o.ts < C.CACHE_MAX_AGE_DAYS * DAY);
+        const within = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+        async function readCache(pending) {
+            let o = null;
+            try { o = await within(pending || C.store.get('payload'), 4000); } catch (e) { o = null; }
+            if (usable(o)) return o;
+            try { const l = JSON.parse(localStorage.getItem(LS_COPY) || 'null'); if (usable(l)) return l; } catch (e) { }
+            return null;
         }
-        function writeCache(data) {
-            try {
-                ['packing_dash_cache_v1', 'packing_dash_cache_v2'].forEach(k => localStorage.removeItem(k));   // older versions
-                localStorage.setItem(C.CACHE_KEY, JSON.stringify({ v: 3, ts: Date.now(), data: data }));
-            } catch (e) { /* quota or private mode — the dashboard still works, just starts cold next time */ }
+        function writeCache(data, ts, sig) {
+            const meta = () => { try { localStorage.setItem(META_KEY, JSON.stringify({ ts: ts, sig: sig, rows: data.length })); } catch (e) { } };
+            C.store.put('payload', { v: 4, ts: ts, sig: sig, data: data })
+                .then(() => {
+                    try { ['packing_dash_cache_v1', 'packing_dash_cache_v2', LS_COPY].forEach(k => localStorage.removeItem(k)); } catch (e) { }
+                    meta();
+                })
+                .catch(() => {
+                    // IndexedDB blocked (some private windows): fall back to localStorage
+                    try { localStorage.setItem(LS_COPY, JSON.stringify({ v: 3, ts: ts, sig: sig, data: data })); meta(); }
+                    catch (e) { /* no room either — it still works, just starts cold next time */ }
+                });
         }
         function liveFetch() {
             const ctl = new AbortController();
@@ -2831,11 +2984,11 @@
                 .finally(() => clearTimeout(timer));
         }
 
-        function ingest(data, src, ts) {
+        function ingest(data, sig) {
             S.raw = data;
             S.recs = normalize(data);
-            S.sig = sigOf(data);
-            S.srcTs = ts || Date.now();
+            S.sig = sig || sigOf(data);
+            booting(false);
             let lo = null, hi = null;
             for (const r of S.recs) if (r.ok) { if (lo == null || r.t < lo) lo = r.t; if (hi == null || r.t > hi) hi = r.t; }
             S.dataStart = lo; S.dataEnd = hi;
@@ -2857,51 +3010,184 @@
             refresh();
         }
 
-        function setStatus(kind, ts) {
-            $('#status').className = 'status ' + kind;
-            $('#statusTxt').textContent = kind === 'live' ? 'Live · ' + clock(ts) : kind === 'cached' ? 'Cached · ' + ago(ts)
-                : kind === 'off' ? 'Offline' : kind === 'sync' ? 'Syncing…' : 'Loading…';
-            $('#status').title = ts ? 'Data as of ' + new Date(ts).toLocaleString() : '';
+        /* ─── "Last updated" status ─── */
+        const timeTxt = ts => new Date(ts).toLocaleTimeString(C.LOCALE, { hour: 'numeric', minute: '2-digit' });
+        function whenTxt(ts) {
+            const d = new Date(ts), n = new Date();
+            const day = d.toDateString() === n.toDateString() ? 'Today' : d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear();
+            return day + ', ' + timeTxt(ts);
+        }
+        function inTxt(ts) {
+            const s = (ts - Date.now()) / 1000;
+            return s <= 45 ? 'any moment' : s < 3600 ? 'in ' + Math.ceil(s / 60) + ' min' : 'in ' + Math.round(s / 3600) + ' h';
+        }
+        function entryTxt() {       // the newest date in the sheet
+            if (S.dataEnd == null) return '—';
+            const d = Math.round((todayIST() - S.dataEnd) / DAY);
+            return d === 0 ? 'today' : d === 1 ? 'yesterday' : d > 1 && Yr(S.dataEnd) === Yr(todayIST()) ? fDayS(S.dataEnd) : fDay(S.dataEnd);
+        }
+        function entryAgo() {
+            const d = Math.round((todayIST() - S.dataEnd) / DAY);
+            return d === 0 ? 'today' : d === 1 ? 'yesterday' : d > 1 ? d + ' days ago' : 'date is in the future — check the sheet';
+        }
+        function statusKind() {
+            if (S.syncing) return 'sync';
+            if (S.lastErr) return 'off';
+            if (!S.recs.length) return 'sync';
+            return Date.now() - S.syncedAt < 2 * RECHECK_MS + 60000 ? 'live' : 'cached';
+        }
+        const nextCheck = () => S.lastErr ? S.retryAt : S.syncedAt + RECHECK_MS;
+        function renderStatus() {
+            const k = statusKind(), has = S.recs.length > 0, ts = S.syncedAt;
+            let t, sub;
+            if (!has) { t = S.lastErr ? 'Offline' : 'Loading…'; sub = S.lastErr ? 'nothing saved yet' : 'fetching the sheet'; }
+            else if (S.syncing) { t = 'Updating…'; sub = 'last updated ' + ago(ts); }
+            else if (S.lastErr) { t = 'Couldn’t update'; sub = 'last updated ' + ago(ts); }
+            else { t = 'Updated ' + ago(ts); sub = 'latest entry ' + entryTxt(); }
+            const st = $('#status');
+            st.className = 'status ' + k;
+            $('#statusTxt').textContent = t;
+            $('#statusSub').textContent = sub;
+            st.title = has ? 'Last updated ' + whenTxt(ts) + ' — click for details' : '';
+            renderSyncPop();
+        }
+        function renderSyncPop() {
+            const pop = $('#syncPop');
+            if (pop.hidden) return;
+            const k = statusKind(), has = S.recs.length > 0, ts = S.syncedAt;
+            const head = {
+                live: 'Up to date with the sheet', cached: 'Showing the saved copy', off: 'Couldn’t reach the sheet',
+                sync: has ? 'Checking the sheet for new entries…' : 'Loading from the sheet…'
+            }[k];
+            const nx = nextCheck();
+            const row = (dt, dd, sm) => `<dt>${dt}</dt><dd>${dd}${sm ? `<small>${sm}</small>` : ''}</dd>`;
+            pop.innerHTML = `<div class="sp-h"><i class="${k}"></i>${esc(head)}</div>` +
+                (S.lastErr ? `<div class="sp-err">Last try failed: ${esc(S.lastErr)}.${has ? ' Still showing the saved copy.' : ''}</div>` : '') +
+                `<dl class="sp-dl">` +
+                row('Last updated', has ? esc(whenTxt(ts)) : '—', has ? esc(ago(ts)) : '') +
+                row('Showing', has ? (S.fromCache ? 'Copy saved on this device' : 'Live data from the sheet') : '—') +
+                row('Latest entry', S.dataEnd != null ? esc(fDay(S.dataEnd)) : '—', S.dataEnd != null ? esc(entryAgo()) : '') +
+                row('Rows', has ? fmt(S.recs.length) : '—') +
+                row('Next check', S.syncing ? 'now' : nx ? esc(timeTxt(Math.max(nx, Date.now()))) : '—',
+                    S.syncing ? '' : nx ? esc(inTxt(nx)) + (S.lastErr ? ' · automatic retry' : ` · every ${C.AUTO_REFRESH_MIN} min while open`) : '') +
+                `</dl><p class="sp-note">The dashboard keeps a copy of the data on this device, so it opens instantly and loads new entries from the sheet in the background.</p>` +
+                `<button class="btn pri" id="btnSyncNow"${S.busy ? ' disabled' : ''}>⟳ ${S.syncing ? 'Updating…' : 'Update now'}</button>`;
+        }
+        function toggleSyncPop(on) {
+            const pop = $('#syncPop');
+            pop.hidden = !(on == null ? pop.hidden : on);
+            $('#status').setAttribute('aria-expanded', String(!pop.hidden));
+            pop.style.top = !pop.hidden && getComputedStyle(pop).position === 'fixed' ? $('#status').getBoundingClientRect().bottom + 8 + 'px' : '';
+            renderSyncPop();
+        }
+        let toastT = 0;
+        function toast(msg) {
+            const el = $('#toast');
+            el.textContent = msg;
+            el.classList.add('on');
+            clearTimeout(toastT);
+            toastT = setTimeout(() => el.classList.remove('on'), 4500);
         }
         function showErr(msg) { const b = $('#errBanner'); if (msg) { b.textContent = '⚠ ' + msg; b.hidden = false; } else b.hidden = true; }
 
-        async function load(manual) {
+        // First ever visit (nothing saved): a loading card with a timer and
+        // skeletons — never an empty "no data" message while we wait.
+        let bootT = 0;
+        function booting(on) {
+            document.body.classList.toggle('booting', on);
+            $('#loadBox').hidden = !on;
+            clearInterval(bootT);
+            if (!on) return;
+            const t0 = Date.now();
+            bootT = setInterval(() => {
+                const s = Math.round((Date.now() - t0) / 1000);
+                $('#loadTxt').textContent = `Loading production data from the sheet… ${s} s`;
+                if (s >= 20) $('#loadSub').textContent = 'The sheet is slow right now — still waiting (this can take up to a minute). After this, the dashboard opens instantly from a copy saved on this device.';
+            }, 1000);
+        }
+        function setBusy(on) {
+            S.busy = S.syncing = on;
+            document.body.classList.toggle('syncing', on);
+            $('#btnRefresh').disabled = on;
+            renderStatus();
+        }
+
+        // Saved copy first (instant), the live sheet in parallel (slow). The
+        // saved copy stays on screen until the sheet answers; if the sheet
+        // fails it simply stays, and a retry is scheduled.
+        async function load() {
             if (S.busy) return;
-            S.busy = true;
-            $('#btnRefresh').disabled = true;
-            let painted = !!S.recs.length;
-            if (!painted && !manual) {
-                const c = readCache();
-                if (c) { ingest(c.data, 'cache', c.ts); setStatus('cached', c.ts); painted = true; }
+            setBusy(true);
+            if (!S.recs.length) {
+                let saved = !!readMeta();
+                try { saved = saved || localStorage.getItem(LS_COPY) != null; } catch (e) { }
+                if (!saved) { $('#fatal').hidden = true; booting(true); }   // nothing saved on this device: say so at once
+                const c = await readCache(C.cached);
+                C.cached = null;
+                if (c) { ingest(c.data, c.sig); S.syncedAt = c.ts; S.fromCache = true; }
+                else if (!document.body.classList.contains('booting')) { $('#fatal').hidden = true; booting(true); }
+                renderStatus();
             }
-            if (!painted) setStatus('sync');
-            else if (manual) setStatus('sync', S.srcTs);
-            const p = !manual && C.prefetch ? C.prefetch : liveFetch();
+            const p = C.prefetch || liveFetch();     // the page head started one on load
             C.prefetch = null;
             try {
                 const j = await p;
                 if (!j || j.status !== 'success' || !Array.isArray(j.data)) throw new Error('unexpected response from the sheet');
-                if (!painted || sigOf(j.data) !== S.sig) ingest(j.data, 'live');
-                writeCache(j.data);
-                S.lastLive = Date.now();
-                setStatus('live', S.lastLive);
+                const sig = sigOf(j.data), before = S.recs.length, changed = sig !== S.sig;
+                if (changed) ingest(j.data, sig);
+                S.syncedAt = Date.now(); S.fromCache = false; S.lastErr = ''; S.fails = 0; S.retryAt = 0;
+                S.metaSeen = S.syncedAt;
+                writeCache(j.data, S.syncedAt, sig);
                 showErr('');
+                if (changed && before) {
+                    const d = S.recs.length - before;
+                    toast(d > 0 ? `✓ Updated from the sheet · ${fmt(d)} new ${d === 1 ? 'entry' : 'entries'}` : '✓ Updated from the sheet · entries changed');
+                }
             } catch (e) {
-                const why = e && e.name === 'AbortError' ? 'timed out' : (e && e.message) || 'network error';
-                if (S.recs.length) {
-                    setStatus('off');
-                    showErr(`Couldn’t reach the sheet (${why}). Showing data saved ${ago(S.srcTs)}.`);
-                } else {
-                    setStatus('off');
+                const why = e && e.name === 'AbortError' ? 'the sheet took too long to answer' : (e && e.message) || 'network error';
+                S.lastErr = why;
+                S.fails = (S.fails || 0) + 1;
+                S.retryAt = Date.now() + Math.min(RECHECK_MS, 60000 * 2 ** S.fails);   // 2, 4, 8, then every 10 min
+                if (S.recs.length) showErr(`Couldn’t reach the sheet (${why}). Showing the copy saved ${ago(S.syncedAt)} — it will retry by itself.`);
+                else {
+                    booting(false);
                     $$('.sheet').forEach(s => { s.hidden = true; });
                     const f = $('#fatal');
-                    f.innerHTML = `<div class="fatal"><h2>Couldn’t load production data</h2><p>The sheet didn’t respond (${esc(why)}). No numbers are shown rather than guessed ones.</p><button class="btn pri" id="btnRetry">Try again</button></div>`;
+                    f.innerHTML = `<div class="fatal"><h2>Couldn’t load production data</h2><p>The sheet didn’t respond (${esc(why)}). It will retry by itself at ${esc(timeTxt(S.retryAt))}; no numbers are shown rather than guessed ones.</p><button class="btn pri" id="btnRetry">Try again now</button></div>`;
                     f.hidden = false;
                 }
             } finally {
-                S.busy = false;
-                $('#btnRefresh').disabled = false;
+                setBusy(false);
             }
+        }
+
+        // Another tab already fetched newer data: take its saved copy instead
+        // of calling the sheet again.
+        async function adopt(m) {
+            S.metaSeen = m.ts;
+            if (m.sig === S.sig) { S.syncedAt = m.ts; S.fromCache = false; S.lastErr = ''; showErr(''); return renderStatus(); }
+            S.busy = true;
+            try {
+                const c = await readCache();
+                if (c && c.sig === m.sig) {
+                    const before = S.recs.length;
+                    ingest(c.data, c.sig);
+                    S.syncedAt = c.ts; S.fromCache = false; S.lastErr = ''; S.fails = 0;
+                    showErr('');
+                    const d = S.recs.length - before;
+                    toast(d > 0 ? `✓ Updated · ${fmt(d)} new ${d === 1 ? 'entry' : 'entries'}` : '✓ Updated from the sheet');
+                }
+            } finally { S.busy = false; renderStatus(); }
+        }
+
+        // Every 30 s: refresh the "3 min ago" texts, and re-check the sheet
+        // when it is due (only while the page is actually being looked at).
+        function tick() {
+            renderStatus();
+            if (S.busy || document.visibilityState !== 'visible') return;
+            const m = readMeta();
+            if (S.recs.length && m && m.ts > S.syncedAt + 1000 && m.ts !== S.metaSeen) return adopt(m);
+            if (navigator.onLine !== false && Date.now() >= nextCheck()) load();
         }
 
         /* ═══════════════════════════════════════════════════════════════════
@@ -2917,6 +3203,9 @@
             const t = e.target;
             const el = sel => t.closest(sel);
             let x;
+            if (el('#status')) return toggleSyncPop();
+            if (t.id === 'btnSyncNow') return load();
+            if (!$('#syncPop').hidden && !el('.sync')) toggleSyncPop(false);   // click outside closes it, and still counts
             if ((x = el('.tab'))) return showSheet(x.dataset.sheet);
             if ((x = el('[data-seg] button'))) {
                 const kind = x.parentElement.dataset.seg;
@@ -2984,8 +3273,8 @@
             if (t.id === 'dqBtn' || t.closest('#dqBtn') || t.id === 'btnIssues2') return openIssues();
             if (t.id === 'dqClose' || t.id === 'dqModal') return closeIssues();
             if (t.id === 'dClose' || t.id === 'drawerScrim') return closeLot();
-            if (t.closest('#btnRefresh')) return load(true);
-            if (t.id === 'btnRetry') return load(true);
+            if (t.closest('#btnRefresh')) return load();
+            if (t.id === 'btnRetry') return load();
             if (t.id === 'btnReset') return resetFilters();
             if (t.closest('#btnSide')) return openSide(true);
             if (t.id === 'btnSideClose' || t.id === 'sideScrim') return openSide(false);
@@ -3045,6 +3334,7 @@
 
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
+                if (!$('#syncPop').hidden) { toggleSyncPop(false); return $('#status').focus(); }
                 if (!$('#dqModal').hidden) return closeIssues();
                 if ($('#drawer').classList.contains('open')) return closeLot();
                 if ($('#side').classList.contains('open')) return openSide(false);
@@ -3057,11 +3347,13 @@
             }
         });
 
-        // Re-sync when someone comes back to the tab after a while.
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible' && S.lastLive && Date.now() - S.lastLive > C.AUTO_REFRESH_MIN * 60000) load(true);
-        });
-        window.addEventListener('online', () => { if (S.recs.length) load(true); });
+        // Background re-check: every 30 s the "updated … ago" text is refreshed
+        // and, if due, the sheet is fetched again (tick). Coming back to the
+        // tab, coming back online, or another tab syncing checks straight away.
+        setInterval(tick, 30000);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+        window.addEventListener('online', () => { S.retryAt = 0; tick(); });
+        window.addEventListener('storage', e => { if (e.key === META_KEY) tick(); });
 
         // A shared link pasted into an already-open tab. (Our own URL updates use
         // replaceState, which does not fire this, so there is no feedback loop.)
@@ -3086,7 +3378,7 @@
         readHash();
         setSheetUI(S.sheet);
         $$('.viz').forEach(v => v.classList.add('sk'));
-        load(false);
+        load();
 
         // exposed for debugging from the console
         window.PPD.state = S;
