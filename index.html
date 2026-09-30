@@ -7,6 +7,7 @@
     <title>Packing Performance Dashboard</title>
     <meta name="description" content="Packing output, lot tracking and quality analytics">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://script.google.com">
     <link rel="preconnect" href="https://script.googleusercontent.com">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -17,7 +18,10 @@
            CONFIG — the only block you should need to edit.
            ═══════════════════════════════════════════════════════════════════ */
         window.PPD = {
-            API_URL: 'https://script.googleusercontent.com/macros/echo?user_content_key=AUkAhnR4na-psbpwY0IXTfoagW5jyen_WvjoIBDQfv5EXbHc5WCwSEZSv1Q3gFTb1PxYsOTDRX4HYBU2LSlbwEYaR6Pdw0hQNkWrjMBsLXQB5KkL3Rwv7tgbTJqRGiqNE2Y6To-gXnKL0VzeiVX-1f9Qs4X_YMJ-fRbcxU1r0c_CYW6wpbqKNlwDccKcn7051rO7UbjXT8mUSSgt130Wk_tOPQROpuacEzKXO7sgd-KVEBtdnzWqOjBTp2OR0xnTqhGucLDLdSxkQ2oQL8ma3VVWRCwnZhMRIQ&lib=MqtZhu1Q8rOjJDbP0eBW7mCU-P2DTP4Ui',
+            // The Apps Script web-app link (ends in /exec). Do NOT paste the
+            // script.googleusercontent.com/macros/echo?user_content_key=… link it
+            // redirects to: that one is temporary and starts failing with HTTP 404.
+            API_URL: 'https://script.google.com/macros/s/AKfycbzLa1o5U6uAlZiSBohvafGYqDtbfwIO-_06VrP5dtVQEwC2sEBN-X7sdXft_-FLvg5o/exec',
             LOCALE: 'en-IN',            // number grouping: 5,51,163 and 5.5L
             // A copy of the last good data is kept on this device (IndexedDB),
             // so the dashboard opens instantly from it while the sheet is
@@ -84,6 +88,10 @@
                 put: function (k, v) { return run('readwrite', function (s) { return s.put(v, k); }); }
             };
         })();
+
+        /* Can this page keep a copy at all? Not in previews opened as a data:
+           or sandboxed page — the browser blocks storage there. */
+        PPD.canSave = (function () { try { return !!window.localStorage && !!window.indexedDB; } catch (e) { return false; } })();
 
         /* Start BOTH reads now, in parallel with the page, the font and the
            chart library: the saved copy (instant) and the live sheet (slow). */
@@ -3070,7 +3078,9 @@
                 row('Rows', has ? fmt(S.recs.length) : '—') +
                 row('Next check', S.syncing ? 'now' : nx ? esc(timeTxt(Math.max(nx, Date.now()))) : '—',
                     S.syncing ? '' : nx ? esc(inTxt(nx)) + (S.lastErr ? ' · automatic retry' : ` · every ${C.AUTO_REFRESH_MIN} min while open`) : '') +
-                `</dl><p class="sp-note">The dashboard keeps a copy of the data on this device, so it opens instantly and loads new entries from the sheet in the background.</p>` +
+                `</dl><p class="sp-note">${C.canSave
+                    ? 'The dashboard keeps a copy of the data on this device, so it opens instantly and loads new entries from the sheet in the background.'
+                    : 'This browser window blocks saving a copy (preview or sandboxed page), so each open waits for the sheet. The published site keeps a copy and opens instantly.'}</p>` +
                 `<button class="btn pri" id="btnSyncNow"${S.busy ? ' disabled' : ''}>⟳ ${S.syncing ? 'Updating…' : 'Update now'}</button>`;
         }
         function toggleSyncPop(on) {
@@ -3099,10 +3109,13 @@
             clearInterval(bootT);
             if (!on) return;
             const t0 = Date.now();
+            const noSave = 'This page is open as a preview where the browser blocks saving a copy, so every open waits for the sheet. On the published site it opens instantly after the first load.';
+            if (!C.canSave) $('#loadSub').textContent = noSave;
             bootT = setInterval(() => {
                 const s = Math.round((Date.now() - t0) / 1000);
                 $('#loadTxt').textContent = `Loading production data from the sheet… ${s} s`;
-                if (s >= 20) $('#loadSub').textContent = 'The sheet is slow right now — still waiting (this can take up to a minute). After this, the dashboard opens instantly from a copy saved on this device.';
+                if (s >= 20) $('#loadSub').textContent = 'The sheet is slow right now — still waiting (this can take up to a minute). ' +
+                    (C.canSave ? 'After this, the dashboard opens instantly from a copy saved on this device.' : noSave);
             }, 1000);
         }
         function setBusy(on) {
@@ -3144,7 +3157,9 @@
                     toast(d > 0 ? `✓ Updated from the sheet · ${fmt(d)} new ${d === 1 ? 'entry' : 'entries'}` : '✓ Updated from the sheet · entries changed');
                 }
             } catch (e) {
-                const why = e && e.name === 'AbortError' ? 'the sheet took too long to answer' : (e && e.message) || 'network error';
+                const msg = (e && e.message) || 'network error';
+                const why = e && e.name === 'AbortError' ? 'the sheet took too long to answer'
+                    : /HTTP 404/.test(msg) ? 'the API link was not found (HTTP 404) — check API_URL at the top of the file' : msg;
                 S.lastErr = why;
                 S.fails = (S.fails || 0) + 1;
                 S.retryAt = Date.now() + Math.min(RECHECK_MS, 60000 * 2 ** S.fails);   // 2, 4, 8, then every 10 min
