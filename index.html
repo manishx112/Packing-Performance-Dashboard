@@ -2856,21 +2856,27 @@
                 return { ok: true, t: t };
             }
 
-            // The API sends ISO timestamps at 18:30 UTC (= midnight IST); plain
-            // YYYY-MM-DD and DD/MM/YYYY are accepted too in case the sheet changes.
+            // The API sends dates in various formats:
+            //   ISO timestamps "2025-04-03T18:30:00.000Z" (midnight IST)
+            //   "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+            //   "DD/MM/YYYY" or "DD/MM/YYYY HH:MM:SS"
+            // A trailing time portion (space + digits/colons) is stripped before matching.
             function parseDay(v) {
                 if (v == null || String(v).trim() === '') return { ok: false, reason: 'date cell is blank' };
                 if (typeof v === 'number') return { ok: false, reason: 'plain number, not a date — format the sheet cell as a date' };
                 const s = String(v).trim();
                 let m;
+                // Full ISO timestamp: 2025-04-03T18:30:00.000Z
                 if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
                     const t = Date.parse(s);
                     if (isNaN(t)) return { ok: false, reason: 'unreadable timestamp' };
                     const d = new Date(t + 330 * 60000);
                     return mkDay(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
                 }
-                if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return mkDay(+m[1], +m[2] - 1, +m[3]);
-                if ((m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))) {
+                // Strip trailing time like " 00:00:00" before matching date-only patterns
+                const dateOnly = s.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '');
+                if ((m = dateOnly.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return mkDay(+m[1], +m[2] - 1, +m[3]);
+                if ((m = dateOnly.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/))) {
                     let d = +m[1], mo = +m[2], y = +m[3];
                     if (y < 100) y += 2000;
                     if (mo > 12 && d <= 12) return { ok: false, reason: 'day and month look swapped — expected DD/MM/YYYY' };
