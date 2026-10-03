@@ -559,6 +559,12 @@
             transform: translate(-50%, 0)
         }
 
+        @media (max-width: 1024px) {
+            .toast {
+                bottom: 84px    /* clear of the filter panel's "Show results" bar */
+            }
+        }
+
         .tbtn {
             height: 32px;
             display: inline-flex;
@@ -856,6 +862,42 @@
 
         .side-h .link {
             margin-left: auto
+        }
+
+        /* live result count — on phones the panel covers the page, so this is
+           the only place a filter visibly takes effect */
+        .side-f {
+            position: sticky;
+            bottom: -24px;
+            margin: 8px -16px -24px;
+            padding: 10px 16px 14px;
+            background: var(--panel);
+            border-top: 1px solid var(--line);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12.5px;
+            color: var(--ink2);
+            font-variant-numeric: tabular-nums
+        }
+
+        .side-f span {
+            flex: 1;
+            min-width: 0
+        }
+
+        .side-f b {
+            color: var(--ink)
+        }
+
+        #btnSideDone {
+            display: none
+        }
+
+        @media (max-width: 1024px) {
+            #btnSideDone {
+                display: inline-flex
+            }
         }
 
         .link {
@@ -2381,6 +2423,10 @@
                 <b>Ctrl</b> / <b>⌘</b> to pick several. The page address keeps your filters, so you can bookmark or
                 share a view.
             </p>
+            <div class="side-f">
+                <span id="sideCount">Waiting for data…</span>
+                <button class="btn pri" id="btnSideDone">Show results</button>
+            </div>
         </aside>
         <div class="scrim" id="sideScrim" hidden></div>
 
@@ -4410,6 +4456,17 @@
             function refresh() {
                 if (!S.recs.length) return;
                 computeFilters();
+                // A packer, size, lot or style picked while a short date range is on
+                // often has nothing in that range (most packers and sizes have no
+                // entries in the last 90 days), which made every sheet go blank as if
+                // the filter were broken. Widen to all dates and say so.
+                if (S.widen && !S.cur.length && S.f.range !== 'all' && S.nod.some(r => r.ok)) {
+                    const was = rangeName();
+                    S.f.range = 'all';
+                    computeFilters();
+                    toast(`Nothing in ${was} for this filter — showing all dates`);
+                }
+                S.widen = false;
                 renderChrome();
                 S.dirty = new Set(SHEETS);
                 renderSheet(S.sheet);
@@ -4443,7 +4500,8 @@
                 const n = activeCount();
                 $('#chips').innerHTML = out.join('') + (n ? '<button class="link" data-rm="all" style="margin-left:4px">Clear filters</button>' : '');
                 const m = metrics(S.cur);
-                $('#summary').textContent = `${fmt(m.n)} entries · ${fmt(m.lots)} lots · ${fmt(m.pcs)} pcs`;
+                $('#summary').textContent = `${pl(m.n, 'entry', 'entries')} · ${pl(m.lots, 'lot')} · ${fmt(m.pcs)} pcs`;
+                $('#sideCount').innerHTML = m.n ? `<b>${pl(m.n, 'entry', 'entries')}</b> · ${fmtK(m.pcs)} pcs` : '<b>No entries</b> match these filters';
                 $('#fCount').hidden = !n;
                 $('#fCount').textContent = n;
 
@@ -4511,6 +4569,7 @@
                 if (add) { if (s.has(v)) s.delete(v); else s.add(v); }
                 else if (s.size === 1 && s.has(v)) s.clear();
                 else { s.clear(); s.add(v); }
+                S.widen = s.size > 0;
                 refresh();
             }
             function setRange(a, b) {
@@ -4998,17 +5057,20 @@
                 } catch (e) {
                     const msg = (e && e.message) || 'network error';
                     const why = e && e.name === 'AbortError' ? 'the sheet took too long to answer'
-                        : /HTTP 404/.test(msg) ? 'the API link was not found (HTTP 404) — check API_URL at the top of the file' : msg;
+                        : /HTTP 404/.test(msg) ? 'Google Apps Script answered “unable to open the file” (HTTP 404) — the sheet’s web app is not responding right now'
+                        : /Failed to fetch|NetworkError|Load failed/i.test(msg) ? 'no answer from Google — check the internet connection, or the sheet’s web app is down' : msg;
                     S.lastErr = why;
                     S.fails = (S.fails || 0) + 1;
-                    S.retryAt = Date.now() + Math.min(RECHECK_MS, 60000 * 2 ** S.fails);   // 2, 4, 8, then every 10 min
+                    // with data on screen: 2, 4, 8, then every 10 min; with nothing on screen, sooner: 30 s, 1, 2, 4 min…
+                    S.retryAt = Date.now() + Math.min(RECHECK_MS, (S.recs.length ? 60000 : 15000) * 2 ** S.fails);
                     if (S.recs.length) showErr(`Couldn’t reach the sheet (${why}). Showing the copy saved ${ago(S.syncedAt)} — it will retry by itself.`);
                     else {
                         booting(false);
                         $$('.sheet').forEach(s => { s.hidden = true; });
                         const f = $('#fatal');
-                        f.innerHTML = `<div class="fatal"><h2>Couldn’t load production data</h2><p>The sheet didn’t respond (${esc(why)}). It will retry by itself at ${esc(timeTxt(S.retryAt))}; no numbers are shown rather than guessed ones.</p><button class="btn pri" id="btnRetry">Try again now</button></div>`;
+                        f.innerHTML = `<div class="fatal"><h2>Couldn’t load production data</h2><p>The sheet didn’t respond: ${esc(why)}.</p><p>It will retry by itself at ${esc(timeTxt(S.retryAt))}. Until data arrives the filters stay empty — no numbers are shown rather than guessed ones. After one successful load a copy is kept on this device, and the dashboard opens from it even while the sheet is down.</p><button class="btn pri" id="btnRetry">Try again now</button></div>`;
                         f.hidden = false;
+                        $('#sideCount').textContent = 'No data loaded yet';
                     }
                 } finally {
                     setBusy(false);
@@ -5094,7 +5156,7 @@
                 // style before lot: a style link can sit inside a lot row and vice versa
                 if ((x = el('[data-sopen]'))) return openStyle(x.dataset.sopen, !!x.closest('#drawer'));
                 if ((x = el('[data-run]'))) { if (x.disabled) return; return openLot(x.dataset.run, !!x.closest('#drawer')); }
-                if ((x = el('[data-style]'))) { S.f.style = x.dataset.style; return refresh(); }
+                if ((x = el('[data-style]'))) { S.f.style = x.dataset.style; S.widen = true; return refresh(); }
                 if (t.id === 'dBack') return drawerBack();
                 if ((x = el('.pc[data-idle]'))) {           // an idle packer: open their whole history
                     S.f.packer = new Set([x.dataset.packer]);
@@ -5131,7 +5193,7 @@
                 if (t.id === 'btnRetry') return load();
                 if (t.id === 'btnReset') return resetFilters();
                 if (t.closest('#btnSide')) return openSide(true);
-                if (t.id === 'btnSideClose' || t.id === 'sideScrim') return openSide(false);
+                if (t.id === 'btnSideClose' || t.id === 'sideScrim' || t.id === 'btnSideDone') return openSide(false);
             });
 
             document.addEventListener('change', e => {
@@ -5139,6 +5201,7 @@
                 if (t.matches('input[data-f]')) {
                     const s = S.f[t.dataset.f];
                     if (t.checked) s.add(t.value); else s.delete(t.value);
+                    S.widen = t.checked;
                     return refresh();
                 }
                 if (t.id === 'fRange') {
@@ -5147,15 +5210,20 @@
                     return refresh();
                 }
                 if (t.id === 'fFrom' || t.id === 'fTo') {
-                    const a = fromIso($('#fFrom').value), b = fromIso($('#fTo').value);
-                    if (a != null && b != null) return setRange(a, b);
+                    let a = fromIso($('#fFrom').value), b = fromIso($('#fTo').value);
+                    if (a == null || b == null) return;
+                    // Picking a From after the current To (or a To before From) moves
+                    // the other end with it. Swapping them instead turned "1 Sep, then
+                    // 30 Sep" into "31 Dec 2025 – 30 Sep" when the old To was last year.
+                    if (a > b) { if (t.id === 'fFrom') b = a; else a = b; }
+                    return setRange(a, b);
                 }
                 if (t.id === 'onlyIssues') { S.tbl.data.onlyIssues = t.checked; S.tbl.data.page = 0; return renderTable('data'); }
             });
 
             function handleType(t) {
-                if (t.id === 'fLot') { S.f.lot = t.value.trim(); return refresh(); }
-                if (t.id === 'fStyle') { S.f.style = t.value.trim(); return refresh(); }
+                if (t.id === 'fLot') { S.f.lot = t.value.trim(); S.widen = !!S.f.lot; return refresh(); }
+                if (t.id === 'fStyle') { S.f.style = t.value.trim(); S.widen = !!S.f.style; return refresh(); }
                 if (t.id === 'fs-size') return renderFacet('size');
                 const m = /^q-(\w+)$/.exec(t.id);
                 if (m && S.tbl[m[1]]) { S.tbl[m[1]].q = t.value; S.tbl[m[1]].page = 0; renderTable(m[1]); }
