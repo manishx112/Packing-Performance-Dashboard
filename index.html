@@ -554,6 +554,18 @@
             max-width: calc(100vw - 32px)
         }
 
+        .fresh {
+            flex-basis: 100%;
+            font-size: 12px;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums
+        }
+
+        .fresh b {
+            color: var(--ink2);
+            font-weight: 600
+        }
+
         .toast.on {
             opacity: 1;
             transform: translate(-50%, 0)
@@ -2450,6 +2462,7 @@
 
             <div class="bar">
                 <div class="bar" id="chips" style="margin:0"></div><span class="summary" id="summary"></span>
+                <div class="fresh" id="fresh" hidden></div>
             </div>
 
             <div id="fatal" hidden></div>
@@ -4938,8 +4951,8 @@
             }
             function statusKind() {
                 if (S.syncing) return 'sync';
-                if (S.lastErr) return 'off';
-                if (!S.recs.length) return 'sync';
+                if (!S.recs.length) return S.lastErr ? 'off' : 'sync';
+                if (S.lastErr) return 'cached';      // saved copy on screen: amber, not an error
                 return Date.now() - S.syncedAt < 2 * RECHECK_MS + 60000 ? 'live' : 'cached';
             }
             const nextCheck = () => S.lastErr ? S.retryAt : S.syncedAt + RECHECK_MS;
@@ -4948,13 +4961,24 @@
                 let t, sub;
                 if (!has) { t = S.lastErr ? 'Offline' : 'Loading…'; sub = S.lastErr ? 'nothing saved yet' : 'fetching the sheet'; }
                 else if (S.syncing) { t = 'Updating…'; sub = 'last updated ' + ago(ts); }
-                else if (S.lastErr) { t = 'Couldn’t update'; sub = 'last updated ' + ago(ts); }
+                else if (S.lastErr) { t = 'Updated ' + ago(ts); sub = 'saved copy · retrying'; }
                 else { t = 'Updated ' + ago(ts); sub = 'latest entry ' + entryTxt(); }
                 const st = $('#status');
                 st.className = 'status ' + k;
                 $('#statusTxt').textContent = t;
                 $('#statusSub').textContent = sub;
                 st.title = has ? 'Last updated ' + whenTxt(ts) + ' — click for details' : '';
+                // freshness line under the tabs: when the data was last fetched,
+                // how old it is, how far the sheet goes, and when it updates next
+                const fr = $('#fresh');
+                fr.hidden = !has;
+                if (has) {
+                    const nx = nextCheck();
+                    fr.innerHTML = (S.syncing ? '<b>Updating from the sheet…</b> · ' : '') +
+                        `Last updated <b>${esc(whenTxt(ts))}</b> (${esc(ago(ts))})` +
+                        (S.dataEnd != null ? ` · sheet data up to <b>${esc(fDay(S.dataEnd))}</b>` : '') +
+                        (!S.syncing && nx ? ` · next update ${esc(timeTxt(Math.max(nx, Date.now())))}` : '');
+                }
                 renderSyncPop();
             }
             function renderSyncPop() {
@@ -5063,8 +5087,8 @@
                     S.fails = (S.fails || 0) + 1;
                     // with data on screen: 2, 4, 8, then every 10 min; with nothing on screen, sooner: 30 s, 1, 2, 4 min…
                     S.retryAt = Date.now() + Math.min(RECHECK_MS, (S.recs.length ? 60000 : 15000) * 2 ** S.fails);
-                    if (S.recs.length) showErr(`Couldn’t reach the sheet (${why}). Showing the copy saved ${ago(S.syncedAt)} — it will retry by itself.`);
-                    else {
+                    // data on screen: no red banner — the status and freshness line show its age
+                    if (!S.recs.length) {
                         booting(false);
                         $$('.sheet').forEach(s => { s.hidden = true; });
                         const f = $('#fatal');
