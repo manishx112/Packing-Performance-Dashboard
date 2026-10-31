@@ -2871,8 +2871,6 @@
                 </button>
                 <div class="syncpop" id="syncPop" role="dialog" aria-label="Data status" hidden></div>
             </div>
-            <button class="tbtn dq" id="dqBtn" hidden title="Data issues found in the sheet">⚠ <span
-                    class="lbl">Issues</span> <b id="dqCount">0</b></button>
             <button class="tbtn" id="btnTheme" title="Switch to dark mode" aria-label="Switch to dark mode">🌙</button>
             <button class="tbtn" id="btnRefresh" title="Fetch the latest data">⟳ <span
                     class="lbl">Refresh</span></button>
@@ -5177,11 +5175,12 @@
                 if (it.type === 'lot') openLot(it.id); else openStyle(it.id);
             }
 
+            // Sheet problems are listed on the Data tab only — a warning badge in
+            // the header made viewers think the dashboard itself was broken.
             function renderIssueBadge() {
-                const n = S.issues.length;
-                $('#dqBtn').hidden = !n;
-                $('#dqCount').textContent = n > 999 ? '999+' : n;
-                $('#dqBtn').title = n ? `${n} data issue${n > 1 ? 's' : ''} in the sheet — click for details` : '';
+                const n = S.issues.length, b = $('#btnIssues2');
+                b.hidden = !n;
+                b.textContent = n ? `Review ${fmt(n)} sheet ${n > 1 ? 'issues' : 'issue'}` : 'Review issues';
             }
             function openIssues(kind) {
                 if (!S.issues.length) return;
@@ -5582,7 +5581,7 @@
                 if ((x = el('[data-dq]'))) { S.dqKind = x.dataset.dq; return renderIssues(); }
                 if ((x = el('[data-issue]'))) return viewIssue(+x.dataset.issue);
                 if ((x = el('.hc[data-kind]'))) return openIssues(x.dataset.kind);
-                if (t.id === 'dqBtn' || t.closest('#dqBtn') || t.id === 'btnIssues2') return openIssues();
+                if (t.id === 'btnIssues2') return openIssues();
                 if (t.id === 'dqClose' || t.id === 'dqModal') return closeIssues();
                 if (t.id === 'dClose' || t.id === 'drawerScrim') return closeLot();
                 if (t.closest('#btnRefresh')) return load();
