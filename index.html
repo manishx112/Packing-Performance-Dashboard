@@ -32,7 +32,7 @@
             // 60 s on a bad call. Saved data stays on screen while it waits.
             FETCH_TIMEOUT_MS: 90000,
             DEFAULT_RANGE: 'last90',    // all | last7 | last30 | last90 | last365 | thisMonth | lastMonth | thisYear | lastYear
-            DEFAULT_SHEET: 'lookup',    // lookup (Lots & Styles) | overview | lots | packers | quality | data
+            DEFAULT_SHEET: 'overview',  // overview | lots | packers | quality | data
             // Lot numbers are re-used for new lots later on. A later date with
             // the same Lot No. is a NEW lot when it comes more than
             // LOT_REUSE_GAP_DAYS after the previous date and shares no Style
@@ -58,6 +58,15 @@
             PAGE_SIZE: 25,
             AUTO_REFRESH_MIN: 10        // while the page is open, re-check the sheet this often
         };
+
+        /* Light / dark: the viewer's last choice, else the device setting. Set
+           before the page paints so dark mode never flashes white. */
+        (function () {
+            var t = null;
+            try { t = localStorage.getItem('ppd_theme'); } catch (e) { }
+            if (t !== 'dark' && t !== 'light') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
 
         /* Tiny IndexedDB key-value store for the saved copy. localStorage is
            capped at ~5 MB per site and shared with every page on the same
@@ -2336,6 +2345,500 @@
                 box-shadow: none
             }
         }
+
+        /* ═══════════════════════════════════════════════════════════════════
+           MOTION + DARK THEME
+           ═══════════════════════════════════════════════════════════════════ */
+        /* ─── 3D tilt + cursor spotlight (both themes; JS sets --rx --ry --mx --my) ─── */
+        .kpi,
+        .card,
+        .pc {
+            --rx: 0deg;
+            --ry: 0deg;
+            --mx: 50%;
+            --my: 50%;
+            transition: transform .45s cubic-bezier(.2, .8, .2, 1), box-shadow .25s, border-color .25s, opacity .15s
+        }
+
+        /* only the small cards lean in 3D: a transformed chart card would throw
+           off where the chart thinks the mouse is, and clicks on bars would miss */
+        .kpi.tilt,
+        .pc.tilt {
+            transform: perspective(900px) rotateX(var(--rx)) rotateY(var(--ry))
+        }
+
+        .kpi.tilt,
+        .card.tilt,
+        .pc.tilt {
+            transition: transform .08s linear, box-shadow .25s, border-color .25s
+        }
+
+        .kpi.tilt,
+        .pc.tilt {
+            box-shadow: 0 14px 30px rgba(16, 24, 40, .14)
+        }
+
+        .card.tilt {
+            box-shadow: 0 10px 28px rgba(16, 24, 40, .10)
+        }
+
+        .card {
+            position: relative
+        }
+
+        .spot {
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity .25s;
+            background: radial-gradient(420px circle at var(--mx) var(--my), rgba(78, 121, 167, .10), transparent 45%)
+        }
+
+        .tilt>.spot {
+            opacity: 1
+        }
+
+        /* ─── Entrance: cards fly in, tilted, and settle into place ─── */
+        @keyframes flyin {
+            0% {
+                opacity: 0;
+                transform: perspective(900px) translate3d(0, 34px, -60px) rotateX(-18deg) scale(.94)
+            }
+
+            60% {
+                opacity: 1
+            }
+
+            100% {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        .enter {
+            animation: flyin .75s cubic-bezier(.16, 1, .3, 1) both;
+            animation-delay: calc(var(--i, 0) * 55ms)
+        }
+
+        @keyframes dropin {
+            from {
+                opacity: 0;
+                transform: translateY(-100%)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        @keyframes slidein {
+            from {
+                opacity: 0;
+                transform: translateX(-30px)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        body.intro .top {
+            animation: dropin .55s cubic-bezier(.16, 1, .3, 1) both
+        }
+
+        body.intro .tabs,
+        body.intro .bar {
+            animation: slidein .5s .2s cubic-bezier(.16, 1, .3, 1) both
+        }
+
+        @media (min-width: 1025px) {
+            body.intro .side {
+                animation: slidein .6s .1s cubic-bezier(.16, 1, .3, 1) both
+            }
+        }
+
+        #btnTheme {
+            width: 34px;
+            padding: 0;
+            justify-content: center;
+            font-size: 15px
+        }
+
+        /* ─── Dark palette ─── */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #0a0e15;
+            --panel: #121821;
+            --ink: #e8edf4;
+            --ink2: #b3bfcd;
+            --muted: #7c8899;
+            --line: #222c39;
+            --line2: #19212c;
+            --blue: #6aa8e6;
+            --blue-d: #4e8fd0;
+            --good: #51cf66;
+            --bad: #ff6b6b;
+            --sh: 0 1px 2px rgba(0, 0, 0, .4);
+            --sh2: 0 16px 44px rgba(0, 0, 0, .6);
+            --neon: #38bdf8
+        }
+
+        [data-theme="dark"] body {
+            background:
+                radial-gradient(rgba(148, 179, 214, .07) 1px, transparent 1.4px) 0 0 / 22px 22px,
+                radial-gradient(1200px 600px at 85% -10%, rgba(56, 189, 248, .07), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(167, 139, 250, .06), transparent 60%),
+                var(--bg);
+            background-attachment: fixed
+        }
+
+        [data-theme="dark"] .top {
+            background: rgba(11, 15, 22, .85);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 1px 0 #1d2733
+        }
+
+        [data-theme="dark"] .side {
+            background: rgba(14, 19, 27, .94);
+            border-right-color: #1d2733
+        }
+
+        [data-theme="dark"] .side-h,
+        [data-theme="dark"] .side-f {
+            background: #0f141c
+        }
+
+        [data-theme="dark"] .fi,
+        [data-theme="dark"] .search,
+        [data-theme="dark"] .btn {
+            background-color: #0f141c;
+            border-color: #263140;
+            color: var(--ink)
+        }
+
+        [data-theme="dark"] .btn:hover:not(:disabled),
+        [data-theme="dark"] .opt:hover {
+            background: #1a2230
+        }
+
+        [data-theme="dark"] .btn.pri {
+            background: #2b6cb0;
+            border-color: #2b6cb0;
+            color: #fff
+        }
+
+        [data-theme="dark"] .btn.pri:hover:not(:disabled) {
+            background: #3b82c4
+        }
+
+        [data-theme="dark"] .chip {
+            background: #132235;
+            border-color: #1f3a57;
+            color: #9cc8f0
+        }
+
+        [data-theme="dark"] .chip button {
+            color: #7fa7cc
+        }
+
+        [data-theme="dark"] .chip button:hover {
+            background: #1f3a57;
+            color: #fff
+        }
+
+        [data-theme="dark"] .seg {
+            background: #0f141c
+        }
+
+        [data-theme="dark"] .seg button[aria-pressed="true"] {
+            background: #1f2a38;
+            color: #fff;
+            box-shadow: 0 0 0 1px #2c3a4c
+        }
+
+        [data-theme="dark"] .sk,
+        [data-theme="dark"] body.booting .kpis:empty,
+        [data-theme="dark"] body.booting .tw:has(table:empty) {
+            background: linear-gradient(90deg, #141b25 25%, #1c2532 37%, #141b25 63%);
+            background-size: 400% 100%
+        }
+
+        [data-theme="dark"] th {
+            background: #161e29;
+            color: var(--ink2)
+        }
+
+        [data-theme="dark"] tbody tr:hover td {
+            background: #172130
+        }
+
+        [data-theme="dark"] td {
+            border-color: var(--line2)
+        }
+
+        [data-theme="dark"] .tag {
+            background: #1c2430;
+            color: #b3bfcd
+        }
+
+        [data-theme="dark"] .tag.mens {
+            background: #142538;
+            color: #8cc0f0
+        }
+
+        [data-theme="dark"] .tag.ladies {
+            background: #33220f;
+            color: #f7b267
+        }
+
+        [data-theme="dark"] .reuse {
+            background: #2e2410;
+            color: #f5c451
+        }
+
+        [data-theme="dark"] .warnc {
+            color: #ff8787
+        }
+
+        [data-theme="dark"] .raw,
+        [data-theme="dark"] .hc.warn b {
+            color: #f7a35c
+        }
+
+        [data-theme="dark"] .pc.idle,
+        [data-theme="dark"] .hc {
+            background: #10161f
+        }
+
+        [data-theme="dark"] .kpi.go:hover,
+        [data-theme="dark"] .pc:hover {
+            border-color: #33506e
+        }
+
+        [data-theme="dark"] .drawer,
+        [data-theme="dark"] .modal,
+        [data-theme="dark"] .syncpop,
+        [data-theme="dark"] .sugg {
+            background: #121821;
+            color: var(--ink);
+            border-color: var(--line)
+        }
+
+        [data-theme="dark"] .x,
+        [data-theme="dark"] .dback,
+        [data-theme="dark"] .comp,
+        [data-theme="dark"] .dq-meta {
+            background: #1a2230
+        }
+
+        [data-theme="dark"] .x:hover,
+        [data-theme="dark"] .dback:hover {
+            background: #243041
+        }
+
+        [data-theme="dark"] .mini div,
+        [data-theme="dark"] .note,
+        [data-theme="dark"] .sp-note,
+        [data-theme="dark"] .dq-chip,
+        [data-theme="dark"] .dq-item:hover,
+        [data-theme="dark"] .dq-foot {
+            background: #161e29
+        }
+
+        [data-theme="dark"] .note.warn {
+            background: #2a2410;
+            border-color: #4a3d12;
+            color: #f5d26b
+        }
+
+        [data-theme="dark"] .err {
+            background: #2a1416;
+            border-color: #5c2328;
+            color: #ff8a8a
+        }
+
+        [data-theme="dark"] .dq-fld {
+            background: #2e1f0e;
+            border-color: #5a3a12;
+            color: #f7a35c
+        }
+
+        [data-theme="dark"] .sg:hover,
+        [data-theme="dark"] .sg.on {
+            background: #1a2636
+        }
+
+        [data-theme="dark"] .sg-ic.l,
+        [data-theme="dark"] .dkind.l {
+            background: #0f2a28;
+            color: #6fd3c8
+        }
+
+        [data-theme="dark"] .sg-ic.s,
+        [data-theme="dark"] .dkind.s {
+            background: #2a1a28;
+            color: #e3a3d6
+        }
+
+        [data-theme="dark"] .sg-t mark {
+            background: #4a3d12;
+            color: #fff
+        }
+
+        [data-theme="dark"] .idchip {
+            background: #241a23;
+            border-color: #4a3346;
+            color: #e3a3d6
+        }
+
+        [data-theme="dark"] .idchip:hover {
+            background: #33242f
+        }
+
+        [data-theme="dark"] .idchip.lot {
+            background: #0f2422;
+            border-color: #1f4a45;
+            color: #6fd3c8
+        }
+
+        [data-theme="dark"] .idchip.lot:hover {
+            background: #163330
+        }
+
+        [data-theme="dark"] .gsearch input:focus {
+            background-color: #0f141c;
+            border-color: var(--neon);
+            color: var(--ink)
+        }
+
+        [data-theme="dark"] .loadbox .spin {
+            border-color: #1f2a38;
+            border-top-color: var(--neon)
+        }
+
+        [data-theme="dark"] .toast {
+            background: #1b2533;
+            box-shadow: 0 0 0 1px #2c3a4c, var(--sh2)
+        }
+
+        [data-theme="dark"] .kpi-v,
+        [data-theme="dark"] .pc-v {
+            text-shadow: 0 0 18px rgba(56, 189, 248, .2)
+        }
+
+        [data-theme="dark"] .spot {
+            background: radial-gradient(420px circle at var(--mx) var(--my), rgba(56, 189, 248, .13), transparent 45%)
+        }
+
+        [data-theme="dark"] .kpi.tilt,
+        [data-theme="dark"] .pc.tilt,
+        [data-theme="dark"] .card.tilt {
+            box-shadow: 0 18px 40px rgba(0, 0, 0, .55), 0 0 26px -6px var(--glow-c, var(--neon))
+        }
+
+        [data-theme="dark"] .tab[aria-selected="true"] {
+            color: #fff;
+            text-shadow: 0 0 12px rgba(56, 189, 248, .55)
+        }
+
+        /* ─── Neon light running round each card (dark only) ─── */
+        @property --ang {
+            syntax: '<angle>';
+            inherits: false;
+            initial-value: 0deg
+        }
+
+        @keyframes neonspin {
+            to {
+                --ang: 360deg
+            }
+        }
+
+        [data-theme="dark"] .kpi,
+        [data-theme="dark"] .card,
+        [data-theme="dark"] .pc {
+            border-color: #1e2835;
+            position: relative
+        }
+
+        [data-theme="dark"] .kpi::after,
+        [data-theme="dark"] .card::after,
+        [data-theme="dark"] .pc::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1.5px;
+            pointer-events: none;
+            z-index: 2;
+            background: conic-gradient(from var(--ang), transparent 0deg 250deg,
+                    color-mix(in srgb, var(--glow-c, var(--neon)) 35%, transparent) 290deg,
+                    var(--glow-c, var(--neon)) 340deg, #fff 352deg, transparent 360deg);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            animation: neonspin var(--spin, 7s) linear infinite;
+            animation-delay: var(--spin-d, 0s);
+            filter: drop-shadow(0 0 4px var(--glow-c, var(--neon)))
+        }
+
+        [data-theme="dark"] .kpi {
+            --glow-c: var(--c)
+        }
+
+        /* each card's light at a different point, so they don't move in step */
+        [data-theme="dark"] :nth-child(6n+2)::after { --spin-d: -1.3s; --spin: 7.6s }
+        [data-theme="dark"] :nth-child(6n+3)::after { --spin-d: -4.1s; --spin: 6.6s }
+        [data-theme="dark"] :nth-child(6n+4)::after { --spin-d: -2.6s; --spin: 8.2s }
+        [data-theme="dark"] :nth-child(6n+5)::after { --spin-d: -5.4s; --spin: 7.2s }
+        [data-theme="dark"] :nth-child(6n)::after { --spin-d: -3.3s; --spin: 6.9s }
+
+        [data-theme="dark"] .kpi::before {
+            box-shadow: 0 0 12px var(--c)
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .enter,
+            body.intro .top,
+            body.intro .side,
+            body.intro .tabs,
+            body.intro .bar {
+                animation: none !important
+            }
+
+            [data-theme="dark"] .kpi::after,
+            [data-theme="dark"] .card::after,
+            [data-theme="dark"] .pc::after {
+                animation: none !important
+            }
+
+            .kpi,
+            .pc {
+                transform: none !important
+            }
+        }
+
+        @media print {
+
+            .kpi::after,
+            .card::after,
+            .pc::after,
+            .spot {
+                display: none !important
+            }
+
+            .kpi,
+            .card,
+            .pc {
+                transform: none !important
+            }
+        }
     </style>
 </head>
 
@@ -2370,6 +2873,7 @@
             </div>
             <button class="tbtn dq" id="dqBtn" hidden title="Data issues found in the sheet">⚠ <span
                     class="lbl">Issues</span> <b id="dqCount">0</b></button>
+            <button class="tbtn" id="btnTheme" title="Switch to dark mode" aria-label="Switch to dark mode">🌙</button>
             <button class="tbtn" id="btnRefresh" title="Fetch the latest data">⟳ <span
                     class="lbl">Refresh</span></button>
         </div>
@@ -2452,8 +2956,7 @@
             </div>
 
             <nav class="tabs" role="tablist" aria-label="Dashboard sheets">
-                <button class="tab" role="tab" data-sheet="lookup" aria-selected="true">Lots &amp; Styles</button>
-                <button class="tab" role="tab" data-sheet="overview" aria-selected="false">Overview</button>
+                <button class="tab" role="tab" data-sheet="overview" aria-selected="true">Overview</button>
                 <button class="tab" role="tab" data-sheet="lots" aria-selected="false">Lots</button>
                 <button class="tab" role="tab" data-sheet="packers" aria-selected="false">Packers</button>
                 <button class="tab" role="tab" data-sheet="quality" aria-selected="false">Quality</button>
@@ -2468,51 +2971,8 @@
             <div id="fatal" hidden></div>
             <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-            <!-- ═══ LOTS & STYLES — find any lot or style, and how they connect ═══ -->
-            <section class="sheet" id="sh-lookup" data-sheet="lookup" role="tabpanel">
-                <div class="kpis" id="k-lookup"></div>
-                <div class="grid">
-                    <article class="card">
-                        <div class="ch">
-                            <div>
-                                <div class="ct">Lots</div>
-                                <div class="cs">Every lot in the current filter, with the style numbers packed in it ·
-                                    click a row for the full lot</div>
-                            </div>
-                        </div>
-                        <div class="tools">
-                            <input class="search" id="q-lots" placeholder="Search lot, style or packer…"
-                                aria-label="Search lots">
-                            <button class="btn" data-export="lots">⬇ Export CSV</button>
-                        </div>
-                        <div class="tw">
-                            <table id="t-lots"></table>
-                        </div>
-                        <div class="pager" id="p-lots"></div>
-                    </article>
-                    <article class="card">
-                        <div class="ch">
-                            <div>
-                                <div class="ct">Styles</div>
-                                <div class="cs">Every style in the current filter, with how many lots it went through ·
-                                    click a row for the full style</div>
-                            </div>
-                        </div>
-                        <div class="tools">
-                            <input class="search" id="q-sx" placeholder="Search style or lot number…"
-                                aria-label="Search styles">
-                            <button class="btn" data-export="sx">⬇ Export CSV</button>
-                        </div>
-                        <div class="tw">
-                            <table id="t-sx"></table>
-                        </div>
-                        <div class="pager" id="p-sx"></div>
-                    </article>
-                </div>
-            </section>
-
             <!-- ═══ OVERVIEW ═══ -->
-            <section class="sheet" id="sh-overview" data-sheet="overview" role="tabpanel" hidden>
+            <section class="sheet" id="sh-overview" data-sheet="overview" role="tabpanel">
                 <div class="kpis" id="k-overview"></div>
                 <div class="grid">
                     <article class="card s8">
@@ -2615,14 +3075,20 @@
                     <article class="card">
                         <div class="ch">
                             <div>
-                                <div class="ct">Lot quality map</div>
-                                <div class="cs" id="cs-lotMap"></div>
+                                <div class="ct">Lots</div>
+                                <div class="cs">Every lot in the current filter, with the style numbers packed in it ·
+                                    click a row for the full lot</div>
                             </div>
                         </div>
-                        <div class="cb">
-                            <div class="viz h340" id="v-lotMap"></div>
-                            <div class="empty" hidden></div>
+                        <div class="tools">
+                            <input class="search" id="q-lots" placeholder="Search lot, style or packer…"
+                                aria-label="Search lots">
+                            <button class="btn" data-export="lots">⬇ Export CSV</button>
                         </div>
+                        <div class="tw">
+                            <table id="t-lots"></table>
+                        </div>
+                        <div class="pager" id="p-lots"></div>
                     </article>
                 </div>
             </section>
@@ -2831,7 +3297,7 @@
             const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const MONL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
             const WDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            const SHEETS = ['lookup', 'overview', 'lots', 'packers', 'quality', 'data'];
+            const SHEETS = ['overview', 'lots', 'packers', 'quality', 'data'];
             const RANGES = {
                 all: 'All time', last7: 'Last 7 days', last30: 'Last 30 days', last90: 'Last 90 days',
                 last365: 'Last 12 months', thisMonth: 'This month', lastMonth: 'Last month',
@@ -3103,11 +3569,10 @@
                 dataStart: null, dataEnd: null, options: { cat: [], packer: [], size: [] },
                 packerColor: new Map(), runFull: new Map(),
                 f: freshFilters(C.DEFAULT_RANGE in RANGES ? C.DEFAULT_RANGE : 'last90'),
-                sheet: SHEETS.includes(C.DEFAULT_SHEET) ? C.DEFAULT_SHEET : 'lookup', gran: 'auto', heat: 'pcs',
+                sheet: SHEETS.includes(C.DEFAULT_SHEET) ? C.DEFAULT_SHEET : 'overview', gran: 'auto', heat: 'pcs',
                 cur: [], prev: [], nod: [], ex: {}, exPrev: {}, rng: [null, null], prng: null, prevOk: false,
                 allLots: [], allStyles: [], dstack: [],   // all-time lot & style index (search) + drawer history
                 tbl: {
-                    sx: { sort: 'last', dir: -1, page: 0, q: '' },
                     lots: { sort: 'date', dir: -1, page: 0, q: '' },
                     styles: { sort: 'alter', dir: -1, page: 0, q: '' },
                     data: { sort: 'date', dir: -1, page: 0, q: '', onlyIssues: false }
@@ -3417,8 +3882,31 @@
             const ro = 'ResizeObserver' in window ? new ResizeObserver(resizeAll) : null;
             window.addEventListener('resize', resizeAll);
 
+            // Dark mode: the chart builders use light-theme greys; swap them here
+            // so every chart follows the theme without each builder knowing.
+            const isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+            const DARK_INK = {
+                '#e5e7eb': '#273241', '#f0f2f5': '#19212b', '#6b7280': '#8e9aab', '#4b5563': '#b3bfcd',
+                '#374151': '#cfd7e2', '#1f2937': '#e8edf4', '#8b95a5': '#7f8b9c'
+            };
+            function darken(o, key) {
+                if (Array.isArray(o)) return o.map(x => darken(x, key));
+                if (o && typeof o === 'object' && Object.getPrototypeOf(o) === Object.prototype) {
+                    const r = {};
+                    for (const k in o) r[k] = darken(o[k], k);
+                    return r;
+                }
+                if (typeof o === 'string') {
+                    const v = o.toLowerCase();
+                    if (key === 'borderColor' && (v === '#fff' || v === '#ffffff')) return '#121821';   // gaps between slices / cells
+                    return DARK_INK[v] || o;
+                }
+                return o;
+            }
+
             // Draws a chart, or its empty / loading / failed state.
             function draw(id, opt, onClick, emptyMsg) {
+                if (opt && isDark()) opt = darken(Object.assign({}, opt, { textStyle: Object.assign({ color: '#b3bfcd' }, opt.textStyle) }));
                 const el = document.getElementById(id);
                 if (!el) return;
                 const emp = el.parentElement.querySelector('.empty');
@@ -3675,67 +4163,6 @@
                 });
             }
 
-            // Every lot as a point: size across, alter rate up. The y-axis is capped
-            // near the 98th percentile — one 96%-altered lot would otherwise squash
-            // every other dot onto the floor. Lots above the cap sit on the top edge
-            // as ▲ markers and the tooltip gives their true rate.
-            function optLotMap(L) {
-                const pts = L.filter(x => x.pcs > 0);
-                if (!pts.length) return null;
-                const avg = pctOf(sum(pts, x => x.alter), sum(pts, x => x.pcs));
-                const rates = pts.map(x => pctOf(x.alter, x.pcs)).sort((a, b) => a - b);
-                const p98 = rates[Math.min(rates.length - 1, Math.floor(rates.length * 0.98))];
-                const top = rates[rates.length - 1];
-                const cap = Math.min(Math.max(C.HIGH_ALTER_PCT * 2, avg * 3, p98 * 1.25, 1), Math.max(top, 1));
-                const capped = cap < top;
-                const by = {};
-                for (const x of pts) { const c = x.cats.size === 1 ? [...x.cats][0] : 'Mixed'; (by[c] = by[c] || []).push(x); }
-                const names = Object.keys(by).sort((a, b) => by[b].length - by[a].length);
-                const off = pts.filter(x => pctOf(x.alter, x.pcs) > cap).length;
-                return {
-                    by: by, avg: avg, off: off, opt: base({
-                        legend: LEGEND,
-                        grid: { left: 14, right: 24, top: 36, bottom: 30, containLabel: true },
-                        tooltip: tip({
-                            trigger: 'item', formatter: p => {
-                                const x = by[p.seriesName][p.dataIndex];
-                                return `<b>Lot ${esc(x.lot)}</b>${x.runsOfLot > 1 ? ` <span style="opacity:.7">(${x.runNo} of ${x.runsOfLot})</span>` : ''} · ${x.t != null ? fDay(x.t) : 'undated'}<br>` +
-                                    `${fmt(x.pcs)} pcs · ${x.n} entries · ${x.styles.size} styles<br>${esc([...x.packers].join(', '))}<br>` +
-                                    `Alter <b>${fmt(x.alter)}</b> (${fmtP(pctOf(x.alter, x.pcs))})<br><span style="opacity:.65">Click to open the lot</span>`;
-                            }
-                        }),
-                        xAxis: {
-                            type: 'value', name: 'Lot size (pieces)', nameLocation: 'middle', nameGap: 24,
-                            nameTextStyle: { color: '#8b95a5', fontSize: 11 }, ...AX, axisLabel: { ...AX.axisLabel, formatter: v => fmtK(v) }
-                        },
-                        yAxis: {
-                            type: 'value', name: 'Alter %', nameTextStyle: { color: '#8b95a5', fontSize: 11 }, ...AX, min: 0,
-                            max: capped ? +cap.toFixed(2) : v => Math.max(1, Math.ceil(v.max * 1.08)),
-                            axisLabel: { ...AX.axisLabel, formatter: v => (capped && Math.abs(v - cap) < 1e-6 ? '▲ ' : '') + (+v.toFixed(1)) + '%' }
-                        },
-                        series: names.map((c, i) => ({
-                            name: c, type: 'scatter',
-                            symbolSize: d => Math.min(20, 6 + d[2] * 1.6),
-                            itemStyle: { color: c === 'Mixed' ? '#9c755f' : CAT_COLOR[c] || T10[(i + 3) % 10], opacity: 0.68, borderColor: '#fff', borderWidth: 0.6 },
-                            emphasis: { scale: 1.4, itemStyle: { opacity: 1, borderColor: '#1f2937', borderWidth: 1 } },
-                            data: by[c].map(x => {
-                                const rate = pctOf(x.alter, x.pcs);
-                                return rate > cap
-                                    ? { value: [x.pcs, +cap.toFixed(3), x.n], symbol: 'triangle', itemStyle: { opacity: 1, borderColor: '#a51d1f', borderWidth: 1 } }
-                                    : { value: [x.pcs, +rate.toFixed(3), x.n] };
-                            }),
-                            markLine: i === 0 ? {
-                                silent: true, symbol: 'none',
-                                data: [
-                                    { yAxis: +avg.toFixed(3), lineStyle: { color: '#8b95a5', type: 'dashed' }, label: { formatter: 'average ' + fmtP(avg), color: '#6b7280', fontSize: 10, position: 'insideEndTop' } },
-                                    { yAxis: C.HIGH_ALTER_PCT, lineStyle: { color: '#e15759', type: 'dotted', opacity: 0.7 }, label: { formatter: `high rework (>${C.HIGH_ALTER_PCT}%)`, color: '#c92a2a', fontSize: 10, position: 'insideEndTop' } }
-                                ].filter(d => d.yAxis <= cap)
-                            } : undefined
-                        }))
-                    })
-                };
-            }
-
             function optPTrend(list, rng) {
                 if (!list.some(r => r.ok)) return null;
                 const g = effGran(rng);
@@ -3787,13 +4214,14 @@
                 const val = c => (metric === 'pcs' ? c.pcs : metric === 'lots' ? c.runs.size : +pctOf(c.alter, c.pcs).toFixed(2));
                 let max = 0;
                 for (const c of cell.values()) max = Math.max(max, val(c));
+                const dark = isDark();
                 const data = [], meta = [];
                 packers.forEach((p, yi) => months.forEach((m, xi) => {
                     const c = cell.get(p + '|' + m);
                     meta.push({ p: p, m: m, c: c || null });
                     if (!c) { data.push({ value: [xi, yi, '-'] }); return; }
                     const v = val(c);
-                    data.push({ value: [xi, yi, v], label: { color: v > max * 0.55 ? '#fff' : '#1f2937' } });
+                    data.push({ value: [xi, yi, v], label: { color: dark ? (v > max * 0.55 ? '#0b1220' : '#dbe6f3') : (v > max * 0.55 ? '#fff' : '#1f2937') } });
                 }));
                 const fmtV = v => (metric === 'pcs' ? fmtK(v) : metric === 'lots' ? String(v) : v.toFixed(1) + '%');
                 return {
@@ -3811,7 +4239,9 @@
                         yAxis: { type: 'category', data: packers, ...AX, axisLabel: { ...AX.axisLabel, color: '#374151', fontSize: 12 } },
                         visualMap: {
                             show: false, min: 0, max: max || 1,
-                            inRange: { color: metric === 'rate' ? ['#fff4f4', '#fbb4b5', '#e15759', '#a51d1f'] : ['#eef3f9', '#a0cbe8', '#4e79a7', '#1f4e79'] }
+                            inRange: { color: dark
+                                ? (metric === 'rate' ? ['#2a1518', '#6e2a2e', '#e15759', '#ffb3b4'] : ['#132235', '#2a5580', '#4e9be0', '#a8d8ff'])
+                                : (metric === 'rate' ? ['#fff4f4', '#fbb4b5', '#e15759', '#a51d1f'] : ['#eef3f9', '#a0cbe8', '#4e79a7', '#1f4e79']) }
                         },
                         series: [{
                             type: 'heatmap', data: data, itemStyle: { borderColor: '#fff', borderWidth: 2, borderRadius: 3 },
@@ -4044,33 +4474,6 @@
                 ]
             };
 
-            // Style explorer: which lots each style went through, with totals.
-            TABLES.sx = {
-                empty: 'No styles match the current filters.',
-                rows: () => {
-                    const q = S.tbl.sx.q.trim().toLowerCase();
-                    const G = S.styleRows || [];
-                    if (!q) return G;
-                    // matches the style number, or any lot it was packed in ("which styles were in lot 1028?")
-                    return G.filter(x => x.style.toLowerCase().includes(q) || [...x.lots].some(l => l.toLowerCase().includes(q)));
-                },
-                rowAttr: x => ` class="go" data-sopen="${esc(x.style)}" tabindex="0"`,
-                tiebreak: (a, b) => b.pcs - a.pcs,
-                cols: [
-                    { k: 'style', label: 'Style No.', v: x => x.style, cell: x => `<b>${esc(x.style)}</b>` },
-                    { k: 'cat', label: 'Category', v: x => [...x.cats].join(' / '), cell: x => [...x.cats].map(tagCat).join(' ') },
-                    { k: 'lots', label: 'Lots', r: 1, v: x => x.runs.size, tip: 'Physical lots — a re-used lot number counts once per lot' },
-                    { k: 'lotnos', label: 'Lot Nos.', v: x => x.lots.size, cell: x => idList(x.lots, 4) },
-                    { k: 'sizes', label: 'Sizes', v: x => [...x.sizes].sort(COLL.compare).join(', '), cell: x => idList(x.sizes, 3) },
-                    { k: 'packer', label: 'Packer', v: x => [...x.packers].join(', ') },
-                    { k: 'last', label: 'Last packed', v: x => x.last || 0, cell: x => (x.last != null ? fDay(x.last) : '—') },
-                    { k: 'n', label: 'Entries', r: 1, v: x => x.n },
-                    { k: 'pcs', label: 'Pieces', r: 1, v: x => x.pcs, cell: x => fmt(x.pcs) },
-                    { k: 'alter', label: 'Alter', r: 1, v: x => x.alter, cell: x => fmt(x.alter) },
-                    { k: 'rate', label: 'Alter %', r: 1, v: x => pctOf(x.alter, x.pcs), cell: x => dbar(pctOf(x.alter, x.pcs), S.lotRateAvg) }
-                ]
-            };
-
             TABLES.styles = {
                 pageSize: 15,
                 empty: 'No styles match.',
@@ -4167,11 +4570,6 @@
                 ['Style count', x => x.styles.size], ['Style Nos.', x => [...x.styles].sort(COLL.compare).join(' ')],
                 ['Sizes', x => [...x.sizes].join(' ')], ['Entries', x => x.n], ['Pieces', x => x.pcs], ['Fresh', x => x.fresh], ['Alter', x => x.alter],
                 ['Mix', x => x.mix], ['Alter %', x => pctOf(x.alter, x.pcs).toFixed(2)]],
-                sx: [['Style No.', x => x.style], ['Category', x => [...x.cats].join(' / ')], ['Lots', x => x.runs.size],
-                ['Lot Nos.', x => [...x.lots].sort(COLL.compare).join(' ')], ['Sizes', x => [...x.sizes].sort(COLL.compare).join(' ')],
-                ['Packer', x => [...x.packers].join(', ')], ['First packed', x => (x.first != null ? iso(x.first) : '')],
-                ['Last packed', x => (x.last != null ? iso(x.last) : '')], ['Entries', x => x.n], ['Pieces', x => x.pcs],
-                ['Fresh', x => x.fresh], ['Alter', x => x.alter], ['Mix', x => x.mix], ['Alter %', x => pctOf(x.alter, x.pcs).toFixed(2)]],
                 styles: [['Style No.', x => x.style], ['Category', x => [...x.cats].join(' / ')], ['Packer', x => [...x.packers].join(', ')], ['Lots', x => x.runs.size],
                 ['Entries', x => x.n], ['Sizes', x => [...x.sizes].join(' ')], ['Pieces', x => x.pcs], ['Alter', x => x.alter], ['Alter %', x => pctOf(x.alter, x.pcs).toFixed(2)]],
                 data: [['Date', r => (r.ok ? iso(r.t) : str(r.raw['Date']))], ['Month', r => str(r.raw['Month'])], ['Lot No.', r => r.lot],
@@ -4185,30 +4583,6 @@
                10. SHEETS  — each reads the filtered lists and draws itself
                ═══════════════════════════════════════════════════════════════════ */
             const VIEWS = {};
-
-            // Lots & Styles: the two things this operation is tracked by, and how
-            // they connect — which styles went into a lot, how many lots a style took.
-            VIEWS.lookup = function () {
-                const L = lotAgg(S.cur), G = styleAgg(S.cur);
-                const LP = S.prevOk ? lotAgg(S.prev) : null, GP = S.prevOk ? styleAgg(S.prev) : null;
-                S.lots = L;
-                S.styleRows = G;
-                S.lotRateAvg = pctOf(sum(L, x => x.alter), sum(L, x => x.pcs));
-                const spl = L.length ? sum(L, x => x.styles.size) / L.length : 0;
-                const lps = G.length ? sum(G, x => x.runs.size) / G.length : 0;
-                const multi = G.filter(x => x.runs.size > 1).length;
-                const reused = new Set(L.filter(x => x.runsOfLot > 1).map(x => x.lot)).size;
-                $('#k-lookup').innerHTML = [
-                    kpi({ label: 'Lots', v: L.length, text: fmt(L.length), prev: LP ? LP.length : null, better: 'up', color: '#76b7b2', tip: 'Physical lots — a re-used lot number counts once per lot' }),
-                    kpi({ label: 'Style numbers', v: G.length, text: fmt(G.length), prev: GP ? GP.length : null, better: null, color: '#b07aa1', tip: 'Distinct style numbers packed' }),
-                    kpi({ label: 'Styles per lot', v: spl, text: spl.toFixed(1), prev: LP && LP.length ? sum(LP, x => x.styles.size) / LP.length : null, better: null, color: '#b07aa1', tip: 'Average number of style numbers in one lot' }),
-                    kpi({ label: 'Lots per style', v: lps, text: lps.toFixed(2), prev: GP && GP.length ? sum(GP, x => x.runs.size) / GP.length : null, better: null, color: '#76b7b2', tip: 'Average number of lots one style number went through' }),
-                    kpi({ label: 'Styles in 2+ lots', text: fmt(multi) + `<small>${fmtP(pctOf(multi, G.length), 0)} of styles</small>`, note: 'in more than one lot', color: '#4e79a7', tip: 'Style numbers that were packed across two or more lots' }),
-                    kpi({ label: 'Re-used lot numbers', text: fmt(reused), note: 'numbers given to 2+ lots', color: '#edc948', tip: 'Lot numbers here that were also used for a different lot on another date. Each is counted as its own lot.' })
-                ].join('');
-                renderTable('lots');
-                renderTable('sx');
-            };
 
             VIEWS.overview = function () {
                 const a = metrics(S.cur), b = S.prevOk ? metrics(S.prev) : null, sp = sparkSeries(S.cur);
@@ -4297,12 +4671,7 @@
                     $('#cs-lotHist').textContent = L.length ? `How big lots are · median ${fmt(k.med)} pcs, largest ${fmt(k.max)}` : '';
                     draw('v-lotHist', optLotHist(L), null, 'No lots in this date range.');
                 });
-                safe('v-lotMap', () => {
-                    const m = optLotMap(L);
-                    $('#cs-lotMap').textContent = m ? `Each dot is one lot — bigger dots have more entries. Above the dashed line = more altered than average (${fmtP(m.avg)}); above the red line = high rework.` +
-                        (m.off ? ` ${m.off} lot${m.off > 1 ? 's are' : ' is'} off the scale (▲ on the top edge).` : '') + ' Click a dot to open the lot.' : '';
-                    draw('v-lotMap', m && m.opt, m && (p => { const x = m.by[p.seriesName] && m.by[p.seriesName][p.dataIndex]; if (x) openLot(x.run); }), 'No lots in this date range.');
-                });
+                renderTable('lots');
             };
 
             VIEWS.packers = function () {
@@ -4605,6 +4974,7 @@
                 if (!SHEETS.includes(name)) return;
                 setSheetUI(name);
                 if (S.dirty.has(name)) renderSheet(name);
+                animateIn($('#sh-' + name));
                 requestAnimationFrame(() => { for (const id in charts) { const el = charts[id].getDom(); if (el.offsetParent !== null) charts[id].resize(); } });
                 writeHash();
             }
@@ -4927,6 +5297,7 @@
                 $$('.sheet').forEach(s => { s.hidden = s.dataset.sheet !== S.sheet; });
                 renderIssueBadge();
                 refresh();
+                if (!S.introDone) { S.introDone = true; animateIn($('#sh-' + S.sheet)); }
             }
 
             /* ─── "Last updated" status ─── */
@@ -5143,6 +5514,7 @@
                 const t = e.target;
                 const el = sel => t.closest(sel);
                 let x;
+                if (el('#btnTheme')) return toggleTheme();
                 if (el('#status')) return toggleSyncPop();
                 if (t.id === 'btnSyncNow') return load();
                 if (!$('#syncPop').hidden && !el('.sync')) toggleSyncPop(false);   // click outside closes it, and still counts
@@ -5311,6 +5683,84 @@
                 refresh();
             });
 
+            /* ─── Theme, 3D tilt, entrance motion ─── */
+            function syncThemeBtn() {
+                const d = isDark(), b = $('#btnTheme');
+                b.textContent = d ? '☀' : '🌙';
+                b.title = d ? 'Switch to light mode' : 'Switch to dark mode';
+                b.setAttribute('aria-label', b.title);
+            }
+            function toggleTheme() {
+                const t = isDark() ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', t);
+                try { localStorage.setItem('ppd_theme', t); } catch (e) { }
+                syncThemeBtn();
+                S.dirty = new Set(SHEETS);                 // charts redraw in the new colours
+                renderSheet(S.sheet);
+                if ($('#drawer').classList.contains('open') && S.dstack.length) renderDrawer(true);
+            }
+
+            // Small cards lean towards the cursor with a soft light under it; chart
+            // cards get the light only, so clicking a bar stays exact.
+            const motionOK = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+            let tiltEl = null, tiltRaf = 0, tiltEv = null;
+            function untilt(el) {
+                if (!el) return;
+                el.classList.remove('tilt');
+                el.style.removeProperty('--rx');
+                el.style.removeProperty('--ry');
+            }
+            function applyTilt() {
+                tiltRaf = 0;
+                const e = tiltEv, el = tiltEl;
+                if (!e || !el || !el.isConnected) return;
+                const r = el.getBoundingClientRect();
+                const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+                if (!el.classList.contains('card')) {          // chart cards: light only, no lean
+                    el.style.setProperty('--ry', ((px - 0.5) * 18).toFixed(2) + 'deg');
+                    el.style.setProperty('--rx', ((0.5 - py) * 18).toFixed(2) + 'deg');
+                }
+                el.style.setProperty('--mx', (px * 100).toFixed(1) + '%');
+                el.style.setProperty('--my', (py * 100).toFixed(1) + '%');
+                if (!el.querySelector(':scope > .spot')) el.insertAdjacentHTML('beforeend', '<div class="spot" aria-hidden="true"></div>');
+                el.classList.add('tilt');
+            }
+            if (motionOK) {
+                document.addEventListener('pointermove', e => {
+                    if (e.pointerType && e.pointerType !== 'mouse') return;
+                    const el = e.target.closest && e.target.closest('.kpi, .card, .pc');
+                    if (el !== tiltEl) { untilt(tiltEl); tiltEl = el; }
+                    if (!el || el.classList.contains('enter')) return;
+                    tiltEv = e;
+                    if (!tiltRaf) tiltRaf = requestAnimationFrame(applyTilt);
+                }, { passive: true });
+                document.documentElement.addEventListener('pointerleave', () => { untilt(tiltEl); tiltEl = null; });
+                window.addEventListener('blur', () => { untilt(tiltEl); tiltEl = null; });
+            }
+
+            // Cards fly in and settle when the dashboard first loads and when a
+            // sheet is opened — not on every filter click.
+            function animateIn(root) {
+                if (!motionOK || !root) return;
+                const els = [...root.querySelectorAll('.kpi, .card, .pc')].filter(el => el.offsetParent !== null);
+                els.forEach((el, i) => {
+                    el.classList.remove('enter');
+                    el.style.setProperty('--i', Math.min(i, 14));
+                });
+                void root.offsetWidth;                       // restart the animation
+                els.forEach(el => {
+                    el.classList.add('enter');
+                    el.addEventListener('animationend', function done(ev) {
+                        if (ev.animationName !== 'flyin') return;
+                        el.classList.remove('enter');
+                        el.removeEventListener('animationend', done);
+                    });
+                });
+                // a background tab pauses animations: never leave a card mid-flight
+                clearTimeout(animateIn.t);
+                animateIn.t = setTimeout(() => els.forEach(el => el.classList.remove('enter')), 2200);
+            }
+
             /* ═══════════════════════════════════════════════════════════════════
                15. BOOT
                ═══════════════════════════════════════════════════════════════════ */
@@ -5321,6 +5771,8 @@
                 ecTag.addEventListener('error', () => { S.ecFail = true; onEcharts(); });
             }
 
+            syncThemeBtn();
+            if (motionOK) { document.body.classList.add('intro'); setTimeout(() => document.body.classList.remove('intro'), 1400); }
             readHash();
             setSheetUI(S.sheet);
             $$('.viz').forEach(v => v.classList.add('sk'));
